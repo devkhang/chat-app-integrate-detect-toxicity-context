@@ -21,14 +21,12 @@ import type {
 } from "../types";
 import { DEFAULT_AVATAR_BASE64 } from "./../app/constants";
 import { Alert } from 'react-native';
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../firebase";
 
-export const makeDirectRoomId = (uid1: string, uid2: string) => {
-  return [uid1, uid2].sort().join("_");
-};
+import { makeDirectRoomId } from "../functions/src/shared/utils";
 
-export const makeFriendshipId = (uid1: string, uid2: string) => {
-  return [uid1, uid2].sort().join("_");
-};
+import { makeFriendshipId } from "../functions/src/shared/utils";
 
 const snapshotToArray = <T>(snapshot: DataSnapshot): T[] => {
   const value = snapshot.val();
@@ -460,7 +458,7 @@ export function subscribeUserChatList(
 
     const mapped = await Promise.all(
       rooms.map(async (room) => {
-        const userRoomData = roomMap[room.roomId] || {};
+        const userRoomData = roomMap?.[room.roomId] || {};
         const unreadCount = userRoomData.unreadCount || 0;
 
         let name = room.name || "Nhóm không tên";
@@ -581,9 +579,22 @@ export function listenAuthUserProfile(
     callback(user);
   });
 }
-// ==================== PUSH NOTIFICATION (thêm vào cuối file rtdb.ts) ====================
+// ==================== LƯU PUSH TOKEN (SERVER-SIDE) ====================
 export async function savePushToken(uid: string, pushToken: string) {
-  await update(ref(rtdb, `users/${uid}`), { pushToken });
+  try {
+    const saveToken = httpsCallable(functions, "savePushToken");
+
+    const result = await saveToken({ pushToken });
+
+    const data = result.data as { success: boolean; message?: string };
+
+    console.log("✅ Push token đã lưu thành công:", data);
+    return data;
+  } catch (error: any) {
+    console.error("❌ Lỗi lưu push token:", error);
+    Alert.alert('Lỗi', error.message || 'Không thể lưu push token');
+    throw error;
+  }
 }
 
 
@@ -594,60 +605,37 @@ export async function savePushToken(uid: string, pushToken: string) {
  * @param fromUid   - ID của người gọi (A)
  * @param fromName  - Tên hiển thị của người gọi (A)
  */
+// ==================== GỌI VIDEO - GỬI THÔNG BÁO PUSH (SERVER-SIDE) ====================
 export async function sendVideoCallPush(
   toUid: string, 
   fromUid: string, 
   fromName: string
 ) {
-  
-  // Bước 1: Lấy thông tin người nhận (B) từ Firebase
-  const userSnap = await get(ref(rtdb, `users/${toUid}`));
-  const user = userSnap.val() as AppUser | null;
-
-  // Bước 2: Kiểm tra người B có pushToken chưa
-  if (!user || !user.pushToken) {
-    Alert.alert('Thông báo', 'Người này chưa nhận được thông báo push');
-    console.log('❌ Người nhận chưa có pushToken');
-    return;
-  }
-
-  console.log(`📤 Đang gửi cuộc gọi video đến: ${user.displayName || 'Người dùng'}`);
-
-  // Bước 3: Tạo gói dữ liệu (payload) gửi cho Expo
-  const payload = {
-    to: user.pushToken,                    // ← Gửi đến ai? (bắt buộc)
-    
-    title: "📹 Cuộc gọi video",            // Tiêu đề thông báo
-    
-    body: `${fromName} đang gọi video cho bạn`,  // Nội dung thông báo
-    
-    // Dữ liệu ẩn gửi kèm (điện thoại B sẽ nhận được)
-    data: {
-      type: "video_call",                  // Loại thông báo (để B biết mở màn Incoming Call)
-      fromUid: fromUid,                    // ID người gọi
-      fromName: fromName,                  // Tên người gọi
-      roomId: makeDirectRoomId(fromUid, toUid), // ID phòng video call
-    },
-
-    sound: "default",                      // Phát âm thanh thông báo mặc định
-    priority: "high",                      // Ưu tiên cao (quan trọng cho cuộc gọi)
-  };
-
-  // Bước 4: Gửi yêu cầu đến server Expo
   try {
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    const sendPush = httpsCallable(functions, "sendVideoCallPush");
 
-    const result = await response.json();
-    console.log('✅ Gửi push thành công:', result);
+    const result = await sendPush({ toUid, fromUid, fromName });
 
-  } catch (error) {
-    console.error('❌ Lỗi khi gửi push notification:', error);
-    Alert.alert('Lỗi', 'Không thể gửi thông báo cuộc gọi');
+    const data = result.data as {
+      success: boolean;
+      message?: string;
+      expoResult?: any;
+    };
+
+    console.log("📤 Kết quả từ Cloud Function:", data);
+
+    if (data.success) {
+      console.log("✅ Gửi push video call thành công!");
+      // Có thể Alert nếu muốn thông báo cho người gọi
+      // Alert.alert('Thành công', data.message);
+    } else {
+      Alert.alert('Thông báo', data.message || 'Không thể gửi cuộc gọi');
+    }
+
+    return data;        // ← Bạn có thể return để sử dụng ở component nếu cần
+  } catch (error: any) {
+    console.error("❌ Lỗi Cloud Function sendVideoCallPush:", error);
+    Alert.alert('Lỗi', error.message || 'Không thể gửi thông báo cuộc gọi');
+    throw error;
   }
 }

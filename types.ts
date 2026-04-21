@@ -24,7 +24,7 @@ export type Friendship = {
 
 export type Room = {
   roomId: string;
-  type: 'direct' | 'group';
+  type: 'direct' | 'group' | 'ai';
   name: string;
   members: string[];
   admins: string[];

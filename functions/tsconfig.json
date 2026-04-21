@@ -1,17 +1,17 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
-    "esModuleInterop": true,
-    "moduleResolution": "nodenext",
-    "noImplicitReturns": true,
-    "noUnusedLocals": true,
+    "baseUrl": ".",
+    "module": "commonjs",
+    "target": "es2020",
     "outDir": "lib",
-    "sourceMap": true,
+    "rootDir": "src",
+    "skipLibCheck": true,      // Bỏ qua lỗi trong node_modules
+    "esModuleInterop": true,
     "strict": true,
-    "target": "es2017"
+    "paths": {"@shared/*": ["src/shared/*"]}
   },
-  "compileOnSave": true,
-  "include": [
-    "src"
-  ],
+  "include": ["src"],          // CHỈ biên dịch code trong thư mục src của functions
+  "exclude": [
+    "node_modules"             // CHỈ cần loại bỏ node_modules là đủ
+  ]
 }
