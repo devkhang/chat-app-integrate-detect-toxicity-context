@@ -5,7 +5,17 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './../firebase';
 import '../utils/streamPolyfill';
 import * as Notifications from 'expo-notifications';
-import { savePushToken } from '../services/rtdb';   // ← thêm dòng này
+import { savePushToken } from '../services/rtdb';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: false,      // hiện thông báo ngay cả khi app đang mở
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowBanner: true,     // ← BẮT BUỘC thêm
+    shouldShowList: true,       // ← BẮT BUỘC thêm
+  }),
+});
 
 export default function RootLayout() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -15,9 +25,9 @@ export default function RootLayout() {
   useEffect(() => {
     const registerPushNotifications = async () => {
       try {
-        // 1. Kiểm tra quyền
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
         let finalStatus = existingStatus;
+
         if (existingStatus !== 'granted') {
           const { status } = await Notifications.requestPermissionsAsync();
           finalStatus = status;
@@ -28,36 +38,36 @@ export default function RootLayout() {
           return;
         }
 
-        // 2. Lấy token (Bọc kỹ chỗ này)
-        // Thêm projectId nếu bạn dùng Expo SDK mới (49+)
         const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: '1d1eac74-6d01-4c95-8368-72b71db89c91' 
+          projectId: '1d1eac74-6d01-4c95-8368-72b71db89c91',
         });
-        
+
         const pushToken = tokenData.data;
         console.log('✅ Expo Push Token:', pushToken);
 
         if (auth.currentUser?.uid) {
           await savePushToken(auth.currentUser.uid, pushToken);
         }
-      } catch (error) {
-        console.log('❌ Lỗi không lấy được Push Token:', error.message);
-        // Bạn có thể hiện thông báo nhẹ nhàng cho user ở đây thay vì để app crash
+      } catch (error: any) {
+        console.log('❌ Lỗi lấy Push Token:', error.message);
       }
     };
 
     registerPushNotifications();
   }, []);
-  // ============================================================
 
-  // ==================== 2. LẮNG NGHE PUSH NOTIFICATION ====================
+  // ==================== 2. LẮNG NGHE PUSH NOTIFICATION (ĐÃ TỐI ƯU) ====================
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+    console.log('🟢 Notification listeners đã được mount');
+
+    // Foreground: app đang mở
+    const receivedListener = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as any;
+      console.log('📨 [Foreground] Nhận push data:', data);
 
       if (data?.type === 'video_call') {
-        // Tự động mở màn Incoming Call khi nhận cuộc gọi
-        router.push({
+        console.log('📹 [Foreground] Chuyển sang incoming-call');
+        router.replace({
           pathname: '/incoming-call',
           params: {
             fromUid: data.fromUid,
@@ -68,11 +78,32 @@ export default function RootLayout() {
       }
     });
 
-    return () => subscription.remove(); // dọn dẹp khi component unmount
-  }, []);
-  // ============================================================
+    // User bấm vào thông báo (background hoặc killed)
+    const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as any;
+      console.log('👆 [Tap Notification] Data:', data);
 
-  // ==================== PHẦN CODE CŨ (không thay đổi) ====================
+      if (data?.type === 'video_call') {
+        console.log('📹 [Tap] Chuyển sang incoming-call');
+        router.replace({
+          pathname: '/incoming-call',
+          params: {
+            fromUid: data.fromUid,
+            fromName: data.fromName,
+            roomId: data.roomId,
+          },
+        });
+      }
+    });
+
+    return () => {
+      receivedListener.remove();
+      responseListener.remove();
+      console.log('🔴 Notification listeners đã remove');
+    };
+  }, []);
+
+  // ==================== 3. LẮNG NGHE TRẠNG THÁI ĐĂNG NHẬP ====================
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -81,6 +112,7 @@ export default function RootLayout() {
     return unsubscribe;
   }, []);
 
+  // ==================== 4. ĐIỀU HƯỚNG TỰ ĐỘNG ====================
   useEffect(() => {
     if (user === undefined) return;
 
@@ -108,13 +140,14 @@ export default function RootLayout() {
       !inFriendRequestsScreen &&
       !inChatScreen &&
       !inEditProfileScreen &&
-      !inVideoCallScreen &&          // ← thêm
-      !inIncomingCallScreen          // ← thêm
+      !inVideoCallScreen &&
+      !inIncomingCallScreen
     ) {
       router.replace('/');
     }
   }, [user, segments]);
 
+  // ==================== HIỂN THỊ LOADING KHI CHƯA XÁC ĐỊNH USER ====================
   if (user === undefined) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -123,6 +156,7 @@ export default function RootLayout() {
     );
   }
 
+  // ==================== CÁC ROUTE CỦA ỨNG DỤNG ====================
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -132,17 +166,17 @@ export default function RootLayout() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="register" options={{ headerShown: false }} />
 
-      {/* Route mới cho Incoming Call */}
+      {/* Màn hình Incoming Call */}
       <Stack.Screen 
         name="incoming-call" 
         options={{ 
           title: 'Cuộc gọi đến',
-          headerShown: false,        // ẩn header để giao diện full màn hình
-          presentation: 'modal',     // hiện kiểu modal (đẹp hơn)
+          headerShown: false,
+          presentation: 'modal',
         }} 
       />
 
-      {/* Route cho Video Call */}
+      {/* Màn hình Video Call */}
       <Stack.Screen 
         name="video-call/[roomId]" 
         options={{ 

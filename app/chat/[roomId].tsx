@@ -164,6 +164,19 @@ export default function ChatScreen() {
         keyboardDismissMode="on-drag"
         renderItem={({ item }: { item: Message }) => {
           const mine = item.senderId === myUid;
+          if (item.type === "missed_call") {
+            return (
+              <View style={styles.missedCallContainer}>
+                <Text style={styles.missedCallText}>
+                  📴 Cuộc gọi video nhỡ từ {item.senderName} 
+                  {'\n'}
+                  <Text style={styles.missedCallTime}>
+                    {new Date(item.timestamp).toLocaleTimeString('vi-VN')}
+                  </Text>
+                </Text>
+              </View>
+            );
+          }
           return (
             <View style={[styles.messageContainer, mine ? styles.myMessageContainer : styles.otherMessageContainer]}>
               {!mine && (
@@ -297,4 +310,26 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: '#fff',
   },
+  missedCallContainer: {
+  alignSelf: 'center',
+  backgroundColor: '#fff3cd',
+  paddingHorizontal: 16,
+  paddingVertical: 10,
+  borderRadius: 20,
+  marginVertical: 8,
+  maxWidth: '80%',
+},
+
+missedCallText: {
+  color: '#d97706',
+  fontSize: 15,
+  textAlign: 'center',
+  fontWeight: '600',
+},
+
+missedCallTime: {
+  fontSize: 13,
+  color: '#b45309',
+  fontWeight: '400',
+},
 });

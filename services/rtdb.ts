@@ -24,9 +24,8 @@ import { Alert } from 'react-native';
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
 
-import { makeDirectRoomId } from "../functions/src/shared/utils";
+import { makeDirectRoomId,makeFriendshipId } from "../functions/src/shared/utils";
 
-import { makeFriendshipId } from "../functions/src/shared/utils";
 
 const snapshotToArray = <T>(snapshot: DataSnapshot): T[] => {
   const value = snapshot.val();
@@ -668,5 +667,32 @@ export async function sendVideoCallPush(
     console.error("❌ Lỗi Cloud Function sendVideoCallPush:", error);
     Alert.alert('Lỗi', error.message || 'Không thể gửi thông báo cuộc gọi');
     throw error;
+  }
+}
+
+export async function saveMissedCall(
+  roomId: string,
+  fromUid: string,
+  fromName: string,
+  toUid: string
+) {
+  try {
+    const messageRef = ref(rtdb, `roomMessages/${roomId}`);
+    const newMsgRef = push(messageRef);
+
+    await set(newMsgRef, {
+      id: newMsgRef.key,
+      senderId: fromUid,
+      senderName: fromName,
+      type: "missed_call",                    // loại đặc biệt
+      text: `Cuộc gọi video nhỡ`,
+      timestamp: Date.now(),
+      isMissedCall: true,
+      missedBy: toUid,                        // người bị nhỡ
+    });
+
+    console.log("✅ Đã lưu cuộc gọi nhỡ vào phòng chat");
+  } catch (error) {
+    console.error("❌ Lỗi lưu missed call:", error);
   }
 }

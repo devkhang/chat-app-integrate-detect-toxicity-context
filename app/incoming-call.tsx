@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
-import { ensureDirectRoom } from '../services/rtdb';
+import { ensureDirectRoom, saveMissedCall } from '../services/rtdb';
 
 export default function IncomingCallScreen() {
   const { fromUid, fromName, roomId } = useLocalSearchParams<{
@@ -13,54 +13,90 @@ export default function IncomingCallScreen() {
   }>();
 
   const [ringSound, setRingSound] = useState<Audio.Sound | null>(null);
+  const [isRinging, setIsRinging] = useState(true);
 
-  // ==================== PHÁT TIẾNG REO CHUÔNG ====================
+  // ==================== PHÁT TIẾNG REO CHUÔNG + TIMEOUT ====================
   useEffect(() => {
     let sound: Audio.Sound | null = null;
 
     const playRing = async () => {
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../assets/heart_of_hope-pop-blast-ringtones-236915.mp3') // ← bạn phải có file này
-      );
-      sound = newSound;
-      setRingSound(newSound);
-      await newSound.setIsLoopingAsync(true);
-      await newSound.playAsync();
+      try {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          require('../assets/heart_of_hope-pop-blast-ringtones-236915.mp3'), // ← Đường dẫn file chuông của bạn
+          { isLooping: true }
+        );
+        sound = newSound;
+        setRingSound(newSound);
+        await newSound.playAsync();
+      } catch (error) {
+        console.error('❌ Lỗi phát âm thanh reo chuông:', error);
+      }
     };
 
     playRing();
 
+    // Tự động timeout sau 30 giây → Cuộc gọi nhỡ
+    const timeout = setTimeout(() => {
+      if (isRinging) {
+        handleMissedCall();
+      }
+    }, 30000);
+
     return () => {
       if (sound) sound.unloadAsync();
+      clearTimeout(timeout);
     };
-  }, []);
+  }, [isRinging]);
 
-  // ==================== KHI BẤM "NGHE" (ACCEPT) ====================
+  // ==================== XỬ LÝ CUỘC GỌI NHỠ ====================
+  const handleMissedCall = async () => {
+    if (ringSound) await ringSound.stopAsync();
+    setIsRinging(false);
+
+    if (fromUid && roomId && auth.currentUser) {
+      await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
+    }
+
+    Alert.alert(
+      'Cuộc gọi nhỡ',
+      `${fromName} đã gọi lúc ${new Date().toLocaleTimeString('vi-VN')}`,
+      [{ text: 'OK', onPress: () => router.back() }]
+    );
+  };
+
+  // ==================== CHẤP NHẬN CUỘC GỌI ====================
   const handleAccept = async () => {
     if (ringSound) await ringSound.stopAsync();
+    setIsRinging(false);
 
     try {
-      // Đảm bảo phòng video call đã tồn tại
       const finalRoomId = await ensureDirectRoom(fromUid, auth.currentUser!.uid);
-
-      // Chuyển sang màn hình video call thật sự
       router.replace(`/video-call/${finalRoomId}`);
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể tham gia cuộc gọi');
+      Alert.alert('Lỗi', 'Không thể tham gia cuộc gọi video');
+      if (roomId) router.replace(`/chat/${roomId}`);
+      else router.dismiss();
     }
   };
 
-  // ==================== KHI BẤM "TỪ CHỐI" ====================
+  // ==================== TỪ CHỐI CUỘC GỌI ====================
   const handleDecline = async () => {
     if (ringSound) await ringSound.stopAsync();
+    setIsRinging(false);
+
+    if (fromUid && roomId && auth.currentUser) {
+      await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
+    }
+
     Alert.alert('Đã từ chối', 'Bạn đã từ chối cuộc gọi video');
-    router.back();
+    if (roomId) router.replace(`/chat/${roomId}`);
+    else router.dismiss();
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Cuộc gọi video đến</Text>
-      <Text style={styles.callerName}>{fromName}</Text>
+      <Text style={styles.callerName}>{fromName || 'Người gọi'}</Text>
       <Text style={styles.subtitle}>Đang gọi cho bạn...</Text>
 
       <View style={styles.buttonRow}>
@@ -84,10 +120,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  title: { fontSize: 28, color: '#fff', marginBottom: 8 },
-  callerName: { fontSize: 42, fontWeight: 'bold', color: '#0f0', marginBottom: 20 },
-  subtitle: { fontSize: 20, color: '#ccc', marginBottom: 80 },
-  buttonRow: { flexDirection: 'row', gap: 40 },
+  title: {
+    fontSize: 28,
+    color: '#fff',
+    marginBottom: 8,
+  },
+  callerName: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: '#0f0',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 20,
+    color: '#ccc',
+    marginBottom: 80,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 40,
+  },
   declineBtn: {
     backgroundColor: '#dc3545',
     width: 130,
@@ -104,6 +157,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  declineText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  acceptText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  declineText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  acceptText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
 });
