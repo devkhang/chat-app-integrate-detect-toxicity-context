@@ -1,5 +1,5 @@
 // app/chat/[roomId].tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { useLocalSearchParams,useRouter } from 'expo-router';
 import { useChatRoomScreen } from '../../hooks/useChatRoomScreen';
 import { useToxicDetection } from '../../hooks/useToxicDetection';
 import * as ImagePicker from 'expo-image-picker';
-import { getUser, sendMessage, sendImageMessage,sendVideoCallPush } from '../../services/rtdb';
+import { getUser, sendMessage, sendImageMessage,sendVideoCallPush,sendMessagePush } from '../../services/rtdb';
 import type { Message } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
 
@@ -27,17 +27,22 @@ export default function ChatScreen() {
   const router = useRouter();
   const { text, setText, result, isAnalyzing, status, progress } = useToxicDetection();
 
-  const [otherName, setOtherName] = useState('Đang chat');
+  const otherUid = useMemo(() => {
+    if (!room || room.type !== 'direct' || !myUid) return "";
+    return room.members.find((uid: string) => uid !== myUid) || "";
+  }, [room, myUid]);
+
+  const [otherName, setOtherName] = useState('phòng chat');
 
   useEffect(() => {
-    if (!room || room.type !== 'direct' || !myUid) return;
-    const otherUid = room.members.find((uid: string) => uid !== myUid);
-    if (otherUid) {
-      getUser(otherUid).then((user) => {
-        if (user) setOtherName(user.displayName || user.email || 'Người dùng');
-      });
-    }
-  }, [room, myUid]);
+    if (!otherUid) return;
+
+    getUser(otherUid).then((user) => {
+      if (user) {
+        setOtherName(user.displayName || user.email || 'Người dùng');
+      }
+    });
+  }, [otherUid]);
 
   const handleTextChange = (newText: string) => {
     setChatText(newText);
@@ -47,16 +52,28 @@ export default function ChatScreen() {
   // Gửi text
   const realSend = async () => {
     if (!myUid || !chatText.trim()) return;
+
+    const trimmed = chatText.trim();     // ← Đây là dòng tạo trimmed
+
     const myProfile = await getUser(myUid);
 
-    await sendMessage(
-      roomId as string,
-      chatText,
-      myUid,
-      'Bạn',
-      myProfile?.photoURL || DEFAULT_AVATAR_BASE64
-    );
-    setText('');
+    try {
+      // 1. Gửi tin nhắn thật vào database
+      await sendMessage(roomId as string, trimmed, myUid, 'Bạn', myProfile?.photoURL || DEFAULT_AVATAR_BASE64);
+
+      // 2. Gửi push thông báo
+      if (room?.type === 'direct' && otherUid) {
+        await sendMessagePush(otherUid, myUid, myProfile?.displayName || 'Bạn', trimmed, roomId as string);
+      } 
+      else if (room?.type === 'group') {
+        const recipients = room.members.filter((uid: string) => uid !== myUid);
+        await sendMessagePush(recipients, myUid, myProfile?.displayName || 'Bạn', trimmed, roomId as string);
+      }
+
+      setText('');   // Xóa ô nhập
+    } catch (err) {
+      console.error("Lỗi gửi tin nhắn:", err);
+    }
   };
 
   // Gửi ảnh

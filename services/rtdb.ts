@@ -597,6 +597,37 @@ export async function savePushToken(uid: string, pushToken: string) {
   }
 }
 
+// ==================== GỬI PUSH TIN NHẮN (HỖ TRỢ CẢ DIRECT + GROUP) ====================
+export async function sendMessagePush(
+  toUids: string | string[],     // ← ĐÃ SỬA: hỗ trợ 1 người hoặc nhiều người
+  fromUid: string,
+  fromName: string,
+  messageText: string,
+  roomId: string
+) {
+  try {
+    const sendPush = httpsCallable(functions, "sendMessagePush");
+
+    // Chuẩn hóa thành mảng
+    const toUidsArray = Array.isArray(toUids) ? toUids : [toUids];
+
+    const result = await sendPush({
+      toUids: toUidsArray,        // ← Truyền mảng vào
+      fromUid,
+      fromName,
+      messageText,
+      roomId,
+    });
+
+    const data = result.data as { success: boolean; message?: string };
+
+    console.log("✅ Gửi push tin nhắn thành công:", data);
+    return data;
+  } catch (error: any) {
+    console.error("❌ Lỗi gửi push tin nhắn:", error);
+    throw error;
+  }
+}
 
 // ==================== GỌI VIDEO - GỬI THÔNG BÁO PUSH ====================
 /**
