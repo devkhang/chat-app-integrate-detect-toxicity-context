@@ -3,6 +3,7 @@ import { getApp, getApps, initializeApp } from "firebase/app";
 import { getReactNativePersistence , initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from 'firebase/database';
+import { getFunctions } from "firebase/functions";
 const firebaseConfig = {
   apiKey: "AIzaSyBK7ykhDKHl36rdE8KJRpCKmohvdKFGxhA",
   authDomain: "khang123-fd4f9.firebaseapp.com",
@@ -21,3 +22,4 @@ export const auth = initializeAuth(app, {
 
 export const db = getFirestore(app);
 export const rtdb = getDatabase(app);
+export const functions = getFunctions(app, "asia-southeast1");   // ← Dòng này đã được thêm

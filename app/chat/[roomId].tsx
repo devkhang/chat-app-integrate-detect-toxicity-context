@@ -12,11 +12,11 @@ import {
   KeyboardAvoidingView,
   Image,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams,useRouter } from 'expo-router';
 import { useChatRoomScreen } from '../../hooks/useChatRoomScreen';
 import { useToxicDetection } from '../../hooks/useToxicDetection';
 import * as ImagePicker from 'expo-image-picker';
-import { getUser, sendMessage, sendImageMessage } from '../../services/rtdb';
+import { getUser, sendMessage, sendImageMessage,sendVideoCallPush } from '../../services/rtdb';
 import type { Message } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
 
@@ -24,7 +24,7 @@ export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { room, messages, text: chatText, setText: setChatText, myUid } =
     useChatRoomScreen(roomId);
-
+  const router = useRouter();
   const { text, setText, result, isAnalyzing, status, progress } = useToxicDetection();
 
   const [otherName, setOtherName] = useState('Đang chat');
@@ -85,6 +85,32 @@ export default function ChatScreen() {
     }
   };
 
+  const handleVideoCall = async () => {
+    if (!myUid || !room) return;
+
+    const otherUid = room.members.find((uid: string) => uid !== myUid);
+    if (!otherUid) {
+      Alert.alert('Lỗi', 'Không tìm thấy người nhận');
+      return;
+    }
+
+    const myProfile = await getUser(myUid);
+
+    try {
+      // Gửi thông báo push cho người kia (để họ reo chuông)
+      await sendVideoCallPush(
+        otherUid,
+        myUid,
+        myProfile?.displayName || 'Bạn'
+      );
+
+      // A cũng nhảy vào màn hình video call
+      router.replace(`/video-call/${room.roomId}`);
+    } catch (err) {
+      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi video');
+    }
+  };
+
   const onSend = async () => {
     if (result?.isToxic && result.score > 0.75) {
       Alert.alert('Cảnh báo', 'Tin nhắn có thể gây tổn thương. Bạn vẫn muốn gửi?', [
@@ -102,9 +128,16 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : -200}
     >
-      <Text style={styles.header}>
+    <View style={styles.headerContainer}>
+      <Text style={styles.headerTitle}>
         {room?.type === 'group' ? room?.name || 'Nhóm chat' : otherName}
       </Text>
+
+      {/* Nút Gọi Video nằm góc trên bên phải */}
+      <TouchableOpacity style={styles.videoCallButton} onPress={handleVideoCall}>
+        <Text style={styles.videoCallText}>📹</Text>
+      </TouchableOpacity>
+    </View>
 
       <FlatList
         style={{ flex: 1 }}
@@ -216,4 +249,35 @@ const styles = StyleSheet.create({
   warningRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', padding: 10, borderRadius: 8, marginBottom: 8 },
   warningIcon: { fontSize: 18, marginRight: 8 },
   warningText: { color: '#d97706', fontSize: 14, flex: 1 },
+  headerContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  paddingVertical: 14,
+  paddingHorizontal: 20,
+  borderBottomWidth: 1,
+  borderBottomColor: '#eee',
+  backgroundColor: '#fff',
+},
+
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+  },
+
+  videoCallButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#28a745',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+
+  videoCallText: {
+    fontSize: 22,
+    color: '#fff',
+  },
 });

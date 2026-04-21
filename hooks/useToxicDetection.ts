@@ -12,29 +12,21 @@ export function useToxicDetection() {
   } | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  // ==================== NÂNG CẤP STATUS ====================
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('ready');
-  const [progress, setProgress] = useState(0);   // có thể dùng sau nếu muốn
-  // ========================================================
 
   const analyze = debounce(async (inputText: string) => {
     if (!inputText.trim()) {
       setResult(null);
-      setErrorMsg("");
       setStatus('ready');
       return;
     }
 
-    // Bắt đầu phân tích
     setIsAnalyzing(true);
     setStatus('loading');
-    setErrorMsg("");
 
     try {
       const response = await fetch(
-        "https://router.huggingface.co/hf-inference/models/unitary/toxic-bert",
+        "https://router.huggingface.co/hf-inference/models/textdetox/xlmr-large-toxicity-classifier-v2",
         {
           method: "POST",
           headers: {
@@ -42,7 +34,7 @@ export function useToxicDetection() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ inputs: inputText }),
-        },
+        }
       );
 
       const rawText = await response.text();
@@ -52,22 +44,18 @@ export function useToxicDetection() {
         throw new Error(`HTTP ${response.status}: ${rawText}`);
       }
 
-      let data;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        throw new Error("Response không phải JSON");
-      }
+      let data = JSON.parse(rawText);
 
-      let scores: { label: string; score: number }[] = [];
+      // Model này trả về mảng scores
+      const scores = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : data;
 
-      if (Array.isArray(data) && Array.isArray(data[0])) {
-        scores = data[0];
-      } else if (Array.isArray(data)) {
-        scores = data;
-      }
-
-      const toxicItem = scores.find((item) => item.label === "toxic");
+      // Tìm nhãn toxic (thường là "toxic" hoặc "LABEL_1")
+      const toxicItem = scores.find((item: any) => 
+        item.label === "toxic" || 
+        item.label.toLowerCase().includes("toxic") ||
+        item.label === "LABEL_1"
+      );
+      
       const toxicScore = toxicItem ? toxicItem.score : 0;
 
       const isToxic = toxicScore > 0.6;
@@ -76,20 +64,19 @@ export function useToxicDetection() {
         isToxic,
         score: toxicScore,
         warningText: isToxic
-          ? `✨ Toxic (${(toxicScore * 100).toFixed(0)}%) - Your comment may be hurtful. Please consider revising it.`
+          ? `✨ Toxic (${(toxicScore * 100).toFixed(0)}%) - Tin nhắn này có thể gây tổn thương.`
           : "",
       });
 
-      setStatus('ready');   // ← Thành công
+      setStatus('ready');
     } catch (err: any) {
-      console.error("Toxic-BERT API error:", err.message);
-      setErrorMsg(err.message);
+      console.error("Toxic Detection API error:", err.message);
       setResult(null);
-      setStatus('error');   // ← Lỗi
+      setStatus('error');
     } finally {
       setIsAnalyzing(false);
     }
-  }, 300);
+  }, 400);   // tăng nhẹ debounce vì model lớn
 
   useEffect(() => {
     analyze(text);
@@ -98,7 +85,6 @@ export function useToxicDetection() {
   const reset = () => {
     setText("");
     setResult(null);
-    setErrorMsg("");
     setStatus('ready');
   };
 
@@ -107,9 +93,7 @@ export function useToxicDetection() {
     setText,
     result,
     isAnalyzing,
-    errorMsg,
+    status,
     reset,
-    status,      // ← đã hoạt động thật
-    progress,
   };
 }

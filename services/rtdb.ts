@@ -581,3 +581,73 @@ export function listenAuthUserProfile(
     callback(user);
   });
 }
+// ==================== PUSH NOTIFICATION (thêm vào cuối file rtdb.ts) ====================
+export async function savePushToken(uid: string, pushToken: string) {
+  await update(ref(rtdb, `users/${uid}`), { pushToken });
+}
+
+
+// ==================== GỌI VIDEO - GỬI THÔNG BÁO PUSH ====================
+/**
+ * Gửi thông báo push khi có cuộc gọi video
+ * @param toUid     - ID của người được gọi (B)
+ * @param fromUid   - ID của người gọi (A)
+ * @param fromName  - Tên hiển thị của người gọi (A)
+ */
+export async function sendVideoCallPush(
+  toUid: string, 
+  fromUid: string, 
+  fromName: string
+) {
+  
+  // Bước 1: Lấy thông tin người nhận (B) từ Firebase
+  const userSnap = await get(ref(rtdb, `users/${toUid}`));
+  const user = userSnap.val() as AppUser | null;
+
+  // Bước 2: Kiểm tra người B có pushToken chưa
+  if (!user || !user.pushToken) {
+    Alert.alert('Thông báo', 'Người này chưa nhận được thông báo push');
+    console.log('❌ Người nhận chưa có pushToken');
+    return;
+  }
+
+  console.log(`📤 Đang gửi cuộc gọi video đến: ${user.displayName || 'Người dùng'}`);
+
+  // Bước 3: Tạo gói dữ liệu (payload) gửi cho Expo
+  const payload = {
+    to: user.pushToken,                    // ← Gửi đến ai? (bắt buộc)
+    
+    title: "📹 Cuộc gọi video",            // Tiêu đề thông báo
+    
+    body: `${fromName} đang gọi video cho bạn`,  // Nội dung thông báo
+    
+    // Dữ liệu ẩn gửi kèm (điện thoại B sẽ nhận được)
+    data: {
+      type: "video_call",                  // Loại thông báo (để B biết mở màn Incoming Call)
+      fromUid: fromUid,                    // ID người gọi
+      fromName: fromName,                  // Tên người gọi
+      roomId: makeDirectRoomId(fromUid, toUid), // ID phòng video call
+    },
+
+    sound: "default",                      // Phát âm thanh thông báo mặc định
+    priority: "high",                      // Ưu tiên cao (quan trọng cho cuộc gọi)
+  };
+
+  // Bước 4: Gửi yêu cầu đến server Expo
+  try {
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    console.log('✅ Gửi push thành công:', result);
+
+  } catch (error) {
+    console.error('❌ Lỗi khi gửi push notification:', error);
+    Alert.alert('Lỗi', 'Không thể gửi thông báo cuộc gọi');
+  }
+}

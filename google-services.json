@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "561710918740",
+    "firebase_url": "https://khang123-fd4f9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "khang123-fd4f9",
+    "storage_bucket": "khang123-fd4f9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:561710918740:android:e0e59bc6b8092ed3a591c1",
+        "android_client_info": {
+          "package_name": "com.anonymous.initMobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkanxBTltrEuv0sAYIMMFUZi9Dx_wt7u0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

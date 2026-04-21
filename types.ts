@@ -4,6 +4,7 @@ export type AppUser = {
   displayName: string;
   photoURL?: string;
   createdAt?: number;
+  pushToken?: string;
 };
 
 export type FriendRequest = {
