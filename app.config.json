@@ -24,6 +24,15 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.initMobile",
       "softwareKeyboardLayoutMode": "pan",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK",
+        "VIBRATE",
+        "USE_FULL_SCREEN_INTENT",
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_PHONE_CALL"
+      ],
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -45,7 +54,17 @@
         }
       ],
       "@react-native-firebase/app",
-      "@react-native-firebase/messaging"
+      "@react-native-firebase/auth",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "urgent_v2",
+          "icon": "./assets/images/notification-icon.png",
+          "androidMode": "default",
+          "androidCollapsedTitle": "New notification"
+        }
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -54,7 +73,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "1d1eac74-6d01-4c95-8368-72b71db89c91"
+        "projectId": "026d3c63-e1c3-48e6-ba08-3f5587c66de5"
       }
     }
   }

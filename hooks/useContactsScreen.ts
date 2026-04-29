@@ -5,14 +5,11 @@ import { auth } from '../firebase';
 import {
   createGroupRoom,
   ensureDirectRoom,
-  sendFriendRequest,
-  subscribeAcceptedFriendships,
-  subscribeRelatedPendingFriendRequests,
-  subscribeUsers,
-} from '../services/rtdb';
+} from '../services/ChatService';
+import { subscribeUsers} from '../services/UserService';
+import { subscribeAcceptedFriendships, subscribeRelatedPendingFriendRequests, sendFriendRequest } from '../services/FriendService';
 import type { AppUser, FriendRequest, Friendship } from '../types';
 import { useEffect } from 'react';
-
 export function useContactsScreen() {
   const myUid = auth.currentUser?.uid || '';
 

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
-import { ensureDirectRoom, saveMissedCall } from '../services/rtdb';
+import { ensureDirectRoom, saveMissedCall } from '../services/ChatService';
 
 export default function IncomingCallScreen() {
   const { fromUid, fromName, roomId } = useLocalSearchParams<{
@@ -13,18 +13,34 @@ export default function IncomingCallScreen() {
   }>();
 
   const [ringSound, setRingSound] = useState<Audio.Sound | null>(null);
-  const [isRinging, setIsRinging] = useState(true);
+  
+  // Xóa bỏ state isRinging vì không thực sự cần thiết cho logic chạy chuông
+  // const [isRinging, setIsRinging] = useState(true);
 
   // ==================== PHÁT TIẾNG REO CHUÔNG + TIMEOUT ====================
   useEffect(() => {
     let sound: Audio.Sound | null = null;
+    let timeout: NodeJS.Timeout;
 
     const playRing = async () => {
       try {
+        // 1. CẤU HÌNH AUDIO MODE (SỬA LỖI AUDIO FOCUS)
+        // Bắt buộc phải có đoạn này trước khi createAsync
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+          interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false, // Phát ra loa ngoài
+        });
+
+        // 2. TẠO VÀ PHÁT ÂM THANH
         const { sound: newSound } = await Audio.Sound.createAsync(
-          require('../assets/heart_of_hope-pop-blast-ringtones-236915.mp3'), // ← Đường dẫn file chuông của bạn
+          require('../assets/heart_of_hope-pop-blast-ringtones-236915.mp3'),
           { isLooping: true }
         );
+        
         sound = newSound;
         setRingSound(newSound);
         await newSound.playAsync();
@@ -35,23 +51,28 @@ export default function IncomingCallScreen() {
 
     playRing();
 
-    // Tự động timeout sau 30 giây → Cuộc gọi nhỡ
-    const timeout = setTimeout(() => {
-      if (isRinging) {
-        handleMissedCall();
-      }
+    // 3. Tự động timeout sau 30 giây → Cuộc gọi nhỡ
+    timeout = setTimeout(() => {
+      handleMissedCall(sound); // Truyền trực tiếp sound vào để đảm bảo tắt được chuông
     }, 30000);
 
+    // 4. CLEANUP DỌN DẸP
     return () => {
-      if (sound) sound.unloadAsync();
+      if (sound) {
+        sound.stopAsync();
+        sound.unloadAsync(); // Trả lại quyền Audio cho hệ thống
+      }
       clearTimeout(timeout);
     };
-  }, [isRinging]);
+  }, []); // <--- QUAN TRỌNG: Để mảng rỗng [] để chỉ chạy 1 lần khi mount
 
   // ==================== XỬ LÝ CUỘC GỌI NHỠ ====================
-  const handleMissedCall = async () => {
-    if (ringSound) await ringSound.stopAsync();
-    setIsRinging(false);
+  // Nhận tham số currentSound để phòng trường hợp state ringSound chưa kịp cập nhật
+  const handleMissedCall = async (currentSound?: Audio.Sound | null) => {
+    const soundToStop = currentSound || ringSound;
+    if (soundToStop) {
+      await soundToStop.stopAsync();
+    }
 
     if (fromUid && roomId && auth.currentUser) {
       await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
@@ -67,7 +88,6 @@ export default function IncomingCallScreen() {
   // ==================== CHẤP NHẬN CUỘC GỌI ====================
   const handleAccept = async () => {
     if (ringSound) await ringSound.stopAsync();
-    setIsRinging(false);
 
     try {
       const finalRoomId = await ensureDirectRoom(fromUid, auth.currentUser!.uid);
@@ -82,13 +102,12 @@ export default function IncomingCallScreen() {
   // ==================== TỪ CHỐI CUỘC GỌI ====================
   const handleDecline = async () => {
     if (ringSound) await ringSound.stopAsync();
-    setIsRinging(false);
 
     if (fromUid && roomId && auth.currentUser) {
       await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
     }
 
-    Alert.alert('Đã từ chối', 'Bạn đã từ chối cuộc gọi video');
+    // Alert.alert('Đã từ chối', 'Bạn đã từ chối cuộc gọi video');
     if (roomId) router.replace(`/chat/${roomId}`);
     else router.dismiss();
   };
@@ -111,6 +130,7 @@ export default function IncomingCallScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

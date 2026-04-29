@@ -12,7 +12,7 @@ import {
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { auth, rtdb } from '../firebase';
-import { getUser, updateAllMyMessagesAvatar, uploadProfilePhotoBase64 } from '../services/rtdb';
+import { getUser, updateAllMyMessagesAvatar, uploadProfilePhotoBase64 } from '../services/UserService';
 import type { AppUser } from '../types';
 import { ref, update } from 'firebase/database';
 import { DEFAULT_AVATAR_BASE64 } from './constants'; // hoặc dán trực tiếp

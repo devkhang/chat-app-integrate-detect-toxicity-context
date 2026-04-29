@@ -44,13 +44,17 @@ export type Message = {
   imageType?: string;      // ← ví dụ: "image/jpeg"
   imageUrl?: string;        // nếu bạn dùng ảnh chat
   senderPhotoURL?: string;  // ← THÊM DÒNG NÀY
-  type: 'text' | 'image' | 'file' | 'call_missed';
+  type: 'text' | 'image' | 'file' | 'missed_call'| 'voice';
   // Dùng cho cuộc gọi nhỡ
   isMissedCall?: boolean;
   missedBy?: string;           // UID của người bị nhỡ
 
   timestamp: number;           // thời gian tạo tin nhắn
   createdAt?: number;          // nếu bạn dùng trường này
+
+  voiceBase64?: string;
+  voiceDuration?: number;        // thời lượng (giây)
+  voiceMimeType?: string;        // ví dụ: "audio/m4a"
 };
 
 export type ChatListItem = {

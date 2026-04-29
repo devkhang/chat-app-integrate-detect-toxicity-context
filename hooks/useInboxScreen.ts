@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { auth } from '../firebase';
-import { subscribeUserChatList , ensureAIRoom } from '../services/rtdb';
+import { subscribeUserChatList , ensureAIRoom } from '../services/ChatService';
 import type { ChatListItem } from '../types';
 
 export function useInboxScreen() {

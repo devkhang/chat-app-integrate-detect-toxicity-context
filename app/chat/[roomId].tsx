@@ -1,5 +1,5 @@
 // app/chat/[roomId].tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState,useRef } from 'react';
 import {
   View,
   Text,
@@ -12,27 +12,37 @@ import {
   KeyboardAvoidingView,
   Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams,useRouter } from 'expo-router';
 import { useChatRoomScreen } from '../../hooks/useChatRoomScreen';
 import { useToxicDetection } from '../../hooks/useToxicDetection';
 import * as ImagePicker from 'expo-image-picker';
-import { getUser, sendMessage, sendImageMessage,sendVideoCallPush,sendMessagePush } from '../../services/rtdb';
+import { sendMessage, sendImageMessage,subscribeTyping,setTyping,removeTypingOnDisconnect,sendVoiceMessage } from '../../services/ChatService';
+import { getUser } from '../../services/UserService';
+import { sendMessagePush, sendVideoCallPush } from '../../services/NotificationService';
 import type { Message } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
+import { auth } from '@/firebase';
+// Thêm import ở đầu file
+import VoiceMessageBubble from '../../components/VoiceMessageBubble';
+import { Audio } from 'expo-av';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { room, messages, text: chatText, setText: setChatText, myUid } =
+  const { room, messages, text: chatText, setText: setChatText, myUid, typingUsers,myName } =
     useChatRoomScreen(roomId);
   const router = useRouter();
   const { text, setText, result, isAnalyzing, status, progress } = useToxicDetection();
-
   const otherUid = useMemo(() => {
     if (!room || room.type !== 'direct' || !myUid) return "";
     return room.members.find((uid: string) => uid !== myUid) || "";
   }, [room, myUid]);
 
   const [otherName, setOtherName] = useState('phòng chat');
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [voiceDuration, setVoiceDuration] = useState(0);
 
   useEffect(() => {
     if (!otherUid) return;
@@ -47,6 +57,89 @@ export default function ChatScreen() {
   const handleTextChange = (newText: string) => {
     setChatText(newText);
     setText(newText);
+    if (roomId && myUid) {
+      if (newText.trim().length > 0) {
+        setTyping(roomId as string, myUid, true, myName);
+      } else {
+        setTyping(roomId as string, myUid, false);
+      }
+    }
+  };
+
+  // ==================== GHI ÂM VOICE (ĐÃ SỬA LỖI) ====================
+  const recordingRef = useRef<Audio.Recording | null>(null);
+
+  const startRecording = async () => {
+    // Bảo vệ: Không cho ghi nếu đang ghi hoặc có recording cũ
+    if (isRecording || recordingRef.current) return;
+
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      recordingRef.current = newRecording;
+      setIsRecording(true);
+      setVoiceDuration(0);
+
+      const interval = setInterval(() => {
+        setVoiceDuration((prev) => prev + 1);
+      }, 1000);
+
+      (newRecording as any).interval = interval;
+    } catch (err: any) {
+      console.error("Lỗi ghi âm:", err);
+      Alert.alert("Lỗi", "Không thể bắt đầu ghi âm");
+    }
+  };
+
+  const stopRecording = async () => {
+    const currentRecording = recordingRef.current;
+    if (!currentRecording) return;
+
+    try {
+      await currentRecording.stopAndUnloadAsync();
+      const uri = currentRecording.getURI();
+      if (!uri) return;
+
+      setIsRecording(false);
+      if ((currentRecording as any).interval) {
+        clearInterval((currentRecording as any).interval);
+      }
+
+      // Chuyển thành Base64
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      const myProfile = await getUser(myUid);
+
+      await sendVoiceMessage(
+        roomId as string,
+        base64,
+        voiceDuration,
+        myUid,
+        myName,
+        myProfile?.photoURL || DEFAULT_AVATAR_BASE64
+      );
+
+      setVoiceDuration(0);
+    } catch (err) {
+      console.error("Lỗi gửi voice:", err);
+      Alert.alert("Lỗi", "Không thể gửi tin nhắn thoại");
+    } finally {
+      recordingRef.current = null;   // Quan trọng: reset ref
+    }
   };
 
   // Gửi text
@@ -177,6 +270,16 @@ export default function ChatScreen() {
               </View>
             );
           }
+          if (item.type === "voice" && item.voiceBase64) {
+            return (
+              <View style={[styles.messageContainer, mine ? styles.myMessageContainer : styles.otherMessageContainer]}>
+                {!mine && (
+                  <Image source={{ uri: item.senderPhotoURL || DEFAULT_AVATAR_BASE64 }} style={styles.senderAvatar} />
+                )}
+                <VoiceMessageBubble item={item} isMine={mine} />
+              </View>
+            );
+          }
           return (
             <View style={[styles.messageContainer, mine ? styles.myMessageContainer : styles.otherMessageContainer]}>
               {!mine && (
@@ -195,7 +298,18 @@ export default function ChatScreen() {
           );
         }}
       />
-
+      {/* ==================== TYPING INDICATOR - HIỂN THỊ TÊN THẬT ==================== */}
+      {Object.keys(typingUsers || {}).length > 0 ? (
+        <View style={styles.typingContainer}>
+          <Text style={styles.typingText}>
+            {Object.entries(typingUsers || {})
+              .filter(([uid]) => uid !== myUid)                    // loại bỏ chính mình
+              .map(([, data]) => data.displayName)                 // lấy tên thật
+              .join(", ")}{" "}
+            đang gõ...
+          </Text>
+        </View>
+      ) : null}
       {/* ==================== INPUT + TOXIC DISPLAY ==================== */}
       <View style={styles.inputArea}>
         {/* Progress tải mô hình */}
@@ -224,12 +338,23 @@ export default function ChatScreen() {
           <TouchableOpacity style={styles.imageButton} onPress={pickAndSendImage}>
             <Text style={styles.imageButtonText}>📸</Text>
           </TouchableOpacity>
-
+        <TouchableOpacity
+          style={[styles.voiceButton, isRecording && styles.voiceButtonActive]}
+          onPressIn={startRecording}     // Nhấn giữ để bắt đầu ghi
+          onPressOut={stopRecording}     // Thả ra để dừng và gửi
+          disabled={isAnalyzing}
+        >
+        <Ionicons
+          name={isRecording ? "mic" : "mic-outline"}
+          size={28}
+          color={isRecording ? "#ef4444" : "#0084ff"}
+        />
+        </TouchableOpacity>
           <TextInput
             style={[styles.input, result?.isToxic && styles.inputToxic]}
             value={text}
             onChangeText={handleTextChange}
-            placeholder="Nhập tin nhắn..."
+            placeholder="Nhập"
             multiline
             autoCapitalize="none"
             autoCorrect={false}
@@ -280,15 +405,15 @@ const styles = StyleSheet.create({
   warningIcon: { fontSize: 18, marginRight: 8 },
   warningText: { color: '#d97706', fontSize: 14, flex: 1 },
   headerContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  paddingVertical: 14,
-  paddingHorizontal: 20,
-  borderBottomWidth: 1,
-  borderBottomColor: '#eee',
-  backgroundColor: '#fff',
-},
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    backgroundColor: '#fff',
+  },
 
   headerTitle: {
     fontSize: 18,
@@ -311,25 +436,51 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   missedCallContainer: {
-  alignSelf: 'center',
-  backgroundColor: '#fff3cd',
-  paddingHorizontal: 16,
-  paddingVertical: 10,
-  borderRadius: 20,
-  marginVertical: 8,
-  maxWidth: '80%',
-},
+    alignSelf: 'center',
+    backgroundColor: '#fff3cd',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginVertical: 8,
+    maxWidth: '80%',
+  },
 
-missedCallText: {
-  color: '#d97706',
-  fontSize: 15,
-  textAlign: 'center',
-  fontWeight: '600',
-},
+  missedCallText: {
+    color: '#d97706',
+    fontSize: 15,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
 
-missedCallTime: {
-  fontSize: 13,
-  color: '#b45309',
-  fontWeight: '400',
-},
+  missedCallTime: {
+    fontSize: 13,
+    color: '#b45309',
+    fontWeight: '400',
+  },
+  typingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f8f9fa',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  typingText: {
+    color: '#666',
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  voiceButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+
+  voiceButtonActive: {
+    backgroundColor: '#fee2e2',
+    transform: [{ scale: 1.1 }],
+  },
 });

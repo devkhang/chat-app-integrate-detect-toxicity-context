@@ -66,6 +66,7 @@ export const sendVideoCallPush = onCall(async (request) => {
       },
       sound: "default",
       priority: "high",
+      channelId: "urgent_v2",  // <--- QUAN TRỌNG NHẤT
     };
 
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -128,6 +129,8 @@ export const sendMessagePush = onCall(async (request) => {
       data: { type: "new_message", fromUid, fromName, roomId },
       sound: "default",
       priority: "high",
+      channelId: "urgent_v2",  // <--- QUAN TRỌNG NHẤT
+      _displayInForeground: true
     };
 
     const response = await fetch("https://exp.host/--/api/v2/push/send", {

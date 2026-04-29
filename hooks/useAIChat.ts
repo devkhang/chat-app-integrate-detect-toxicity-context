@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { auth } from '../firebase';
-import { sendMessage, subscribeMessages, ensureAIRoom } from '../services/rtdb';  // ← thêm ensureAIRoom
+import { sendMessage, subscribeMessages, ensureAIRoom } from '../services/ChatService';  // ← thêm ensureAIRoom
 import type { Message } from '../types';
 import { DEFAULT_AVATAR_BASE64 } from '@/app/constants';
 
