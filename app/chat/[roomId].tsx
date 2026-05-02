@@ -242,6 +242,19 @@ export default function ChatScreen() {
       <Text style={styles.headerTitle}>
         {room?.type === 'group' ? room?.name || 'Nhóm chat' : otherName}
       </Text>
+      
+      {/* NÚT XEM DANH SÁCH THÀNH VIÊN */}
+        {room?.type === 'group' && (
+          <>
+            <TouchableOpacity
+              style={styles.membersButton}
+              onPress={() => router.push(`/group-members/${roomId}`)}
+            >
+              <Text style={styles.membersText}>👥</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
 
       {/* Nút Gọi Video nằm góc trên bên phải */}
       <TouchableOpacity style={styles.videoCallButton} onPress={handleVideoCall}>
@@ -257,6 +270,16 @@ export default function ChatScreen() {
         keyboardDismissMode="on-drag"
         renderItem={({ item }: { item: Message }) => {
           const mine = item.senderId === myUid;
+          // ==================== THÔNG BÁO HỆ THỐNG ====================
+          if (item.type === "system") {
+            return (
+              <View style={styles.systemMessageContainer}>
+                <Text style={styles.systemMessageText}>
+                  {item.text}
+                </Text>
+              </View>
+            );
+          }
           if (item.type === "missed_call") {
             return (
               <View style={styles.missedCallContainer}>
@@ -482,5 +505,48 @@ const styles = StyleSheet.create({
   voiceButtonActive: {
     backgroundColor: '#fee2e2',
     transform: [{ scale: 1.1 }],
+  },
+    addMemberButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#28a745',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  addMemberText: {
+    fontSize: 24,
+    color: '#fff',
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+    membersButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#007bff',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  membersText: {
+    fontSize: 22,
+    color: '#fff',
+  },
+    systemMessageContainer: {
+    alignSelf: 'center',
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginVertical: 8,
+    maxWidth: '80%',
+  },
+  systemMessageText: {
+    color: '#555',
+    fontSize: 14,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });

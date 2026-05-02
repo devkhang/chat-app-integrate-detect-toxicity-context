@@ -149,6 +149,22 @@ export default function RootLayout() {
       <Stack.Screen name="register" options={{ headerShown: false }} />
       <Stack.Screen name="incoming-call" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
       <Stack.Screen name="video-call/[roomId]" options={{ headerShown: false }} />
+      <Stack.Screen 
+        name="group-add-members/[roomId]" 
+        options={{ 
+          title: 'Thêm thành viên vào nhóm',
+          presentation: 'modal',           // ← Modal đẹp
+          animation: 'slide_from_bottom',
+        }} 
+      />
+      <Stack.Screen 
+        name="group-members/[roomId]" 
+        options={{ 
+          title: 'Thành viên nhóm',
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+        }} 
+      />
     </Stack>
   );
 }
