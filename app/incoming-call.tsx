@@ -3,7 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
-import { ensureDirectRoom, saveMissedCall } from '../services/ChatService';
+import { ensureDirectRoom, saveMissedCall } from '../rtdb services/ChatService';
+import { sendVideoCallPush } from '../rtdb services/NotificationService';
 
 export default function IncomingCallScreen() {
   const { fromUid, fromName, roomId } = useLocalSearchParams<{
@@ -104,6 +105,13 @@ export default function IncomingCallScreen() {
     if (ringSound) await ringSound.stopAsync();
 
     if (fromUid && roomId && auth.currentUser) {
+      await sendVideoCallPush(
+        fromUid,                          // gửi cho A
+        auth.currentUser!.uid,            // từ B
+        auth.currentUser?.displayName || 'Bạn',
+        roomId as string,
+        true,                              // declined = true
+      );
       await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
     }
 

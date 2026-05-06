@@ -35,7 +35,7 @@ export const savePushToken = onCall(async (request) => {
 // ==================== GỬI PUSH VIDEO CALL ====================
 export const sendVideoCallPush = onCall(async (request) => {
   try {
-    const { toUid, fromUid, fromName } = request.data;
+    const { toUid, fromUid, fromName,declined = false } = request.data;
 
     if (!request.auth || request.auth.uid !== fromUid) {
       throw new Error("Không có quyền gọi video thay người khác");
@@ -56,11 +56,14 @@ export const sendVideoCallPush = onCall(async (request) => {
     const roomId = makeDirectRoomId(fromUid, toUid);
     const payload = {
       to: user.pushToken,
-      title: "📹 Cuộc gọi video",
-      body: `${fromName} đang gọi video cho bạn`,
+      title: declined ? "📹 Cuộc gọi bị từ chối" : "📹 Cuộc gọi video",
+      body: declined 
+        ? `người bên kia đã từ chối cuộc gọi` 
+        : `${fromName} đang gọi video cho bạn`,
       data: {
         type: "video_call",
         fromUid,
+        declined,
         fromName,
         roomId,
       },

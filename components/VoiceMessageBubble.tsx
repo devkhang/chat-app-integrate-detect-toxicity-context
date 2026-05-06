@@ -1,8 +1,8 @@
 // app/components/VoiceMessageBubble.tsx
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import { Audio, AVPlaybackStatus } from 'expo-av'; // Thêm AVPlaybackStatus
 import type { Message } from '../types';
 
 interface Props {
@@ -14,7 +14,24 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 1. Hàm xử lý trạng thái phát (Quan trọng nhất để Replay)
+  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+
+    // Cập nhật thanh progress
+    if (status.durationMillis) {
+      setProgress(status.positionMillis / status.durationMillis);
+    }
+
+    // KHI PHÁT HẾT: Reset mọi thứ về trạng thái ban đầu
+    if (status.didJustFinish) {
+      setIsPlaying(false);
+      setProgress(0);
+      // Đưa thanh cuộn về 0 để lần sau bấm Play là nó chạy từ đầu
+      sound?.setPositionAsync(0); 
+    }
+  };
 
   useEffect(() => {
     let newSound: Audio.Sound | null = null;
@@ -24,7 +41,8 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
       try {
         const { sound: createdSound } = await Audio.Sound.createAsync(
           { uri: item.voiceBase64 },
-          { shouldPlay: false }
+          { shouldPlay: false },
+          onPlaybackStatusUpdate // Đăng ký listener ngay khi load
         );
         newSound = createdSound;
         setSound(createdSound);
@@ -37,7 +55,6 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
 
     return () => {
       if (newSound) newSound.unloadAsync();
-      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [item.voiceBase64]);
 
@@ -47,30 +64,19 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
     if (isPlaying) {
       await sound.pauseAsync();
       setIsPlaying(false);
-      if (intervalRef.current) clearInterval(intervalRef.current);
     } else {
+      // Nếu đang ở cuối file (progress gần bằng 1 hoặc đã hết), phát lại từ đầu
+      if (progress >= 0.99) {
+        await sound.setPositionAsync(0);
+      }
       await sound.playAsync();
       setIsPlaying(true);
-
-      intervalRef.current = setInterval(async () => {
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded && status.durationMillis) {
-          setProgress(status.positionMillis / status.durationMillis);
-          if (status.didJustFinish) {
-            setIsPlaying(false);
-            setProgress(0);
-            await sound.setPositionAsync(0);
-            if (intervalRef.current) clearInterval(intervalRef.current);
-          }
-        }
-      }, 100);
     }
   };
 
   return (
     <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
       <TouchableOpacity style={styles.voiceContainer} onPress={togglePlay} activeOpacity={0.7}>
-        {/* Nút Play/Pause */}
         <Ionicons
           name={isPlaying ? "pause" : "play"}
           size={24}
@@ -82,7 +88,6 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
             <Text style={[styles.titleText, isMine ? styles.myText : styles.otherText]}>
               Voice message
             </Text>
-            {/* Sửa lỗi Text string nằm ngoài: Dùng ép kiểu Boolean !! */}
             {!!item.voiceDuration && (
               <Text style={[styles.durationText, isMine ? styles.myText : styles.otherText]}>
                 {item.voiceDuration}s
@@ -90,7 +95,6 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
             )}
           </View>
 
-          {/* Thanh progress lùn và dài */}
           <View style={styles.progressBarContainer}>
             <View 
               style={[
@@ -104,6 +108,8 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
     </View>
   );
 }
+
+// ... styles giữ nguyên như code của bạn
 
 const styles = StyleSheet.create({
   bubble: {

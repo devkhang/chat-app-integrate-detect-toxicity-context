@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useContactsScreen } from '../../hooks/useContactsScreen';
-import { addMembersToGroup } from '../../services/ChatService';
+import { addMembersToGroup } from '../../rtdb services/ChatService';
 import { auth } from '../../firebase';
 import { get, ref } from 'firebase/database';
 import { rtdb } from '../../firebase';

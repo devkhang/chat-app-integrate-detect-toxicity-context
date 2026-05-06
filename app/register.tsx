@@ -10,7 +10,7 @@ import {
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { router } from 'expo-router';
 import { auth } from '../firebase';
-import { createUserProfile } from '../services/UserService';
+import { createUserProfile } from '../rtdb services/UserService';
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');

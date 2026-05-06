@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Image } from 'react-native';
 import { useInboxScreen } from '../../hooks/useInboxScreen';
 import type { ChatListItem } from '../../types';
+import { DEFAULT_AVATAR_BASE64 } from '../constants';   // ← Import này
 
 export default function InboxScreen() {
   const { chatList, handleOpenChat } = useInboxScreen();
@@ -17,12 +18,12 @@ export default function InboxScreen() {
             className="mx-3 mb-2 flex-row items-center rounded-2xl bg-white px-4 py-4 shadow-sm"
             onPress={() => handleOpenChat(item)}
           >
-            {/* Avatar */}
-            <View className="mr-4 h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-              <Text className="text-lg font-bold text-blue-700">
-                {item.name?.[0] || '?'}
-              </Text>
-            </View>
+            {/* Avatar thật của người dùng */}
+            <Image
+              source={{ uri: item.photoURL || DEFAULT_AVATAR_BASE64 }}
+              className="mr-4 h-12 w-12 rounded-full"
+              style={{ resizeMode: 'cover' }}
+            />
 
             {/* Nội dung chat */}
             <View className="flex-1">

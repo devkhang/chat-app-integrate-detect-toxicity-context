@@ -128,17 +128,16 @@ export function subscribeUserChatList(
       rooms.map(async (room) => {
         const userRoomData = roomMap?.[room.roomId] || {};
         const unreadCount = userRoomData.unreadCount || 0;
-
+        let photoURL = DEFAULT_AVATAR_BASE64;   // ← Mặc định
         let name = room.name || "Nhóm không tên";
-        let photoURL = DEFAULT_AVATAR_BASE64;   // mặc định
         if (room.type === "direct") {
           const otherUid = room.members.find((uid) => uid !== myUid) || "";
           const otherUser = otherUid ? await getUser(otherUid) : null;
           name = otherUser?.displayName || otherUser?.email || "Người dùng";
-          photoURL = otherUser?.photoURL || DEFAULT_AVATAR_BASE64;
+          photoURL = otherUser?.photoURL || DEFAULT_AVATAR_BASE64;   // ← Lấy avatar thật
         } else if (room.type === "group") {
           name = room.name || "Nhóm chat";
-          photoURL = room.photoURL || DEFAULT_AVATAR_BASE64;   // mặc định cho nhóm
+          photoURL = room.photoURL || DEFAULT_AVATAR_BASE64;   // ← Lấy avatar nhóm nếu có, nếu không dùng mặc định
         }else if (room.type === "ai") {
           name = "💬 Chat với Gemini AI";     // ← tên đẹp trong Inbox
         }
@@ -148,8 +147,8 @@ export function subscribeUserChatList(
           roomId: room.roomId,
           type: room.type,
           name,
-          photoURL,                    // ← Thêm dòng này,
           lastMessage: room.lastMessage || "Chưa có tin nhắn",
+          photoURL,   // ← thêm dòng này
           time: formatRoomTime(room.lastMessageAt),
           unreadCount,
         } as ChatListItem;
@@ -302,6 +301,7 @@ export async function saveMissedCall(
   try {
     const createdAt = Date.now();
 
+    // 1. Tạo message missed call
     const messageRef = ref(rtdb, `roomMessages/${roomId}`);
     const newMsgRef = push(messageRef);
 
@@ -316,24 +316,53 @@ export async function saveMissedCall(
       missedBy: toUid,
     };
 
+    // 2. Kiểm tra room có tồn tại chưa, nếu chưa thì tạo luôn
+    const roomRef = ref(rtdb, `rooms/${roomId}`);
+    const roomSnap = await get(roomRef);
+
     const updates: Record<string, any> = {
       [`roomMessages/${roomId}/${newMsgRef.key}`]: messagePayload,
-      [`rooms/${roomId}/lastMessage`]: "📴 Cuộc gọi video nhỡ",
-      [`rooms/${roomId}/lastMessageAt`]: createdAt,
-      [`rooms/${roomId}/lastSenderId`]: fromUid,
     };
 
-    // Quan trọng: Phải update userRooms cho CẢ HAI người để Inbox realtime
-    updates[`userRooms/${fromUid}/${roomId}/lastMessageAt`] = createdAt;
-    updates[`userRooms/${toUid}/${roomId}/lastMessageAt`] = createdAt;
+    if (!roomSnap.exists()) {
+      // Tạo room direct nếu chưa có
+      updates[`rooms/${roomId}`] = {
+        roomId,
+        type: "direct",
+        members: [fromUid, toUid].sort(),
+        createdBy: fromUid,
+        createdAt,
+        lastMessage: "Cuộc gọi video nhỡ",
+        lastMessageAt: createdAt,
+        lastSenderId: fromUid,
+      };
+
+      // Tạo userRooms cho cả 2 người
+      updates[`userRooms/${fromUid}/${roomId}`] = true;
+      updates[`userRooms/${toUid}/${roomId}`] = true;
+    } else {
+      // Room đã tồn tại → chỉ update lastMessage
+      updates[`rooms/${roomId}/lastMessage`] = "Cuộc gọi video nhỡ";
+      updates[`rooms/${roomId}/lastMessageAt`] = createdAt;
+      updates[`rooms/${roomId}/lastSenderId`] = fromUid;
+
+      const roomData = roomSnap.val() as Room;
+      roomData.members.forEach((uid: string) => {
+        updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+        if (uid === toUid) {
+          updates[`userRooms/${uid}/${roomId}/unreadCount`] = increment(1);
+        }
+      });
+    }
 
     await update(ref(rtdb), updates);
 
-    console.log(`✅ saveMissedCall thành công - room ${roomId}`);
+    console.log(`✅ Đã lưu missed call thành công vào room ${roomId}`);
   } catch (error) {
-    console.error("❌ Lỗi saveMissedCall:", error);
+    console.error("❌ Lỗi lưu missed call:", error);
   }
 }
+
 // ==================== TYPING INDICATOR ====================
 // Phần hiển thị "đang gõ..." - được đặt trong ChatService vì liên quan trực tiếp đến phòng chat
 
@@ -607,4 +636,79 @@ export async function leaveGroup(roomId: string, myUid: string) {
   );
 
   Alert.alert("Thành công", "Bạn đã rời khỏi nhóm");
+}
+
+
+// ==================== ĐỔI TÊN NHÓM CHAT (BẤT KỲ THÀNH VIÊN NÀO CŨNG ĐƯỢC) ====================
+export async function updateGroupName(
+  roomId: string,
+  newName: string,
+  myUid: string
+) {
+  if (!newName || newName.trim() === '') {
+    Alert.alert('Lỗi', 'Tên nhóm không được để trống');
+    return;
+  }
+
+  const roomRef = ref(rtdb, `rooms/${roomId}`);
+  const roomSnap = await get(roomRef);
+
+  if (!roomSnap.exists()) {
+    Alert.alert('Lỗi', 'Không tìm thấy nhóm');
+    return;
+  }
+
+  const room = roomSnap.val() as Room;
+
+  if (room.type !== 'group') {
+    Alert.alert('Lỗi', 'Chỉ áp dụng cho nhóm chat');
+    return;
+  }
+
+  // KIỂM TRA CHỈ CẦN LÀ THÀNH VIÊN CỦA NHÓM (KHÔNG CẦN LÀ ADMIN)
+  if (!room.members.includes(myUid)) {
+    Alert.alert('Lỗi', 'Bạn không phải thành viên của nhóm');
+    return;
+  }
+
+  await update(ref(rtdb), {
+    [`rooms/${roomId}/name`]: newName.trim(),
+    [`userRooms/${myUid}/${roomId}/lastUpdate`]: Date.now(),
+  });
+
+  Alert.alert('Thành công', 'Đã đổi tên nhóm');
+}
+
+// ==================== CHỈNH SỬA ẢNH NHÓM ====================
+export async function updateGroupPhoto(
+  roomId: string,
+  photoBase64: string,
+  myUid: string
+) {
+  const roomRef = ref(rtdb, `rooms/${roomId}`);
+  const roomSnap = await get(roomRef);
+
+  if (!roomSnap.exists()) {
+    Alert.alert('Lỗi', 'Không tìm thấy nhóm');
+    return;
+  }
+
+  const room = roomSnap.val() as Room;
+
+  if (room.type !== 'group') {
+    Alert.alert('Lỗi', 'Chỉ áp dụng cho nhóm chat');
+    return;
+  }
+
+  // Bất kỳ thành viên nào cũng được đổi ảnh nhóm
+  if (!room.members.includes(myUid)) {
+    Alert.alert('Lỗi', 'Bạn không phải thành viên của nhóm');
+    return;
+  }
+
+  await update(ref(rtdb), {
+    [`rooms/${roomId}/photoURL`]: photoBase64,
+  });
+
+  Alert.alert('Thành công', 'Đã cập nhật ảnh nhóm');
 }

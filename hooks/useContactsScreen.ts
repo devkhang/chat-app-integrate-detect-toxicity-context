@@ -5,9 +5,9 @@ import { auth } from '../firebase';
 import {
   createGroupRoom,
   ensureDirectRoom,
-} from '../services/ChatService';
-import { subscribeUsers} from '../services/UserService';
-import { subscribeAcceptedFriendships, subscribeRelatedPendingFriendRequests, sendFriendRequest } from '../services/FriendService';
+} from '../rtdb services/ChatService';
+import { subscribeUsers} from '../rtdb services/UserService';
+import { subscribeAcceptedFriendships, subscribeRelatedPendingFriendRequests, sendFriendRequest } from '../rtdb services/FriendService';
 import type { AppUser, FriendRequest, Friendship } from '../types';
 import { useEffect } from 'react';
 export function useContactsScreen() {

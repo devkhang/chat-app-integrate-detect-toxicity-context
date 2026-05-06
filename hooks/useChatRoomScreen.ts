@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { auth } from '../firebase';
-import { subscribeMessages, subscribeRoom, markAsRead,subscribeTyping, removeTypingOnDisconnect } from '../services/ChatService';
+import { subscribeMessages, subscribeRoom, markAsRead,subscribeTyping, removeTypingOnDisconnect } from '../rtdb services/ChatService';
 import type { Message, Room } from '../types';
-import { getUser } from '@/services/UserService';
+import { getUser } from '@/rtdb services/UserService';
 
 export function useChatRoomScreen(roomId?: string) {
   const [room, setRoom] = useState<Room | null>(null);

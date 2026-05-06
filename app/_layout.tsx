@@ -6,7 +6,7 @@ import { auth } from './../firebase';
 import '../utils/streamPolyfill';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { savePushToken } from '../services/NotificationService';
+import { savePushToken } from '../rtdb services/NotificationService';
 
 // import { AppState} from 'react-native';
 
@@ -94,13 +94,20 @@ export default function RootLayout() {
       console.log('🔥 [FOREGROUND] Nhận push data:', JSON.stringify(data, null, 2));
 
 
-      if (data?.type === 'video_call') {
+    if (data?.type === 'video_call') {
+      if (data?.declined === true) {
+        console.log('📴 Cuộc gọi bị từ chối');
+        router.replace(`/chat/${data.roomId}`);
+      } 
+      else {
+        // Cuộc gọi mới
         console.log('✅ [FOREGROUND] Cuộc gọi video');
         router.replace({
           pathname: '/incoming-call',
           params: data,
         });
       }
+    }
     });
 
     const responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -168,3 +175,4 @@ export default function RootLayout() {
     </Stack>
   );
 }
+

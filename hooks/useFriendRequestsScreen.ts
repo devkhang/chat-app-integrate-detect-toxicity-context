@@ -5,7 +5,7 @@ import {
   acceptFriendRequestAndOpenRoom,
   rejectFriendRequest,
   subscribeIncomingPendingRequests,
-} from '../services/FriendService';
+} from '../rtdb services/FriendService';
 import type { RequestItem } from '../types';
 
 export function useFriendRequestsScreen() {

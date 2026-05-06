@@ -33,6 +33,7 @@ export type Room = {
   lastMessage: string;
   lastMessageAt: number | null;
   lastSenderId: string;
+  photoURL?: string;   // ← thêm trường này cho ảnh nhóm
 };
 
 export type Message = {
@@ -62,6 +63,7 @@ export type ChatListItem = {
   roomId: string;
   type: 'direct' | 'group' | 'ai';
   name: string;
+  photoURL?: string;
   lastMessage: string;
   time: string;
   unreadCount?: number;     // ← thêm dòng này
