@@ -198,26 +198,33 @@ export default function ChatScreen() {
   const handleVideoCall = async () => {
     if (!myUid || !room) return;
 
-    const otherUid = room.members.find((uid: string) => uid !== myUid);
-    if (!otherUid) {
-      Alert.alert('Lỗi', 'Không tìm thấy người nhận');
-      return;
-    }
-
     const myProfile = await getUser(myUid);
+    const fromName = myProfile?.displayName || myProfile?.email || 'Bạn';
 
     try {
-      // Gửi thông báo push cho người kia (để họ reo chuông)
+      // Lấy tất cả thành viên KHÁC mình (hỗ trợ cả direct và group)
+      const otherMembers = room.members.filter((uid: string) => uid !== myUid);
+
+      if (otherMembers.length === 0) {
+        Alert.alert('Thông báo', 'Không có thành viên nào để gọi');
+        return;
+      }
+
+      // Gọi hàm mới (5 tham số) - đã đồng bộ với backend
       await sendVideoCallPush(
-        otherUid,
+        otherMembers,        // ← mảng người nhận (group hoặc direct)
         myUid,
-        myProfile?.displayName || 'Bạn'
+        fromName,
+        room.roomId,         // ← roomId để mọi người vào đúng phòng
+        false                // declined = false (cuộc gọi bình thường)
       );
 
-      // A cũng nhảy vào màn hình video call
-      router.replace(`/video-call/${room.roomId}`);
-    } catch (err) {
-      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi video');
+      // Người gọi nhảy vào phòng video ngay
+      router.push(`/video-call/${room.roomId}`);
+
+    } catch (err: any) {
+      console.error("Lỗi gọi video:", err);
+      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi video. Vui lòng thử lại.');
     }
   };
 

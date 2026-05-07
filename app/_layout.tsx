@@ -102,7 +102,7 @@ export default function RootLayout() {
       else {
         // Cuộc gọi mới
         console.log('✅ [FOREGROUND] Cuộc gọi video');
-        router.replace({
+        router.push({
           pathname: '/incoming-call',
           params: data,
         });
@@ -115,10 +115,10 @@ export default function RootLayout() {
       console.log('👆 [TAP] Data:', JSON.stringify(data, null, 2));
 
       if (data?.type === 'new_message' && data.roomId) {
-        router.replace(`/chat/${data.roomId}`);
+        router.push(`/chat/${data.roomId}`);
       }
       if (data?.type === 'video_call') {
-        router.replace({
+        router.push({
           pathname: '/incoming-call',
           params: data,
         });

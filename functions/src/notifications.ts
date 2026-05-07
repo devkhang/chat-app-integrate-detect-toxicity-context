@@ -32,44 +32,91 @@ export const savePushToken = onCall(async (request) => {
   }
 });
 
-// ==================== GỬI PUSH VIDEO CALL ====================
 export const sendVideoCallPush = onCall(async (request) => {
   try {
-    const { toUid, fromUid, fromName,declined = false } = request.data;
+    const { 
+      toUids,           // ← CHỈ GIỮ LẠI cái này (hỗ trợ group)
+      fromUid, 
+      fromName, 
+      declined = false,
+      roomId            
+    } = request.data;
 
     if (!request.auth || request.auth.uid !== fromUid) {
       throw new Error("Không có quyền gọi video thay người khác");
     }
 
-    if (!toUid || !fromUid || !fromName) {
-      throw new Error("Thiếu thông tin người nhận hoặc người gọi");
+    if (!fromUid || !fromName) {
+      throw new Error("Thiếu thông tin người gọi");
     }
 
-    const userSnap = await admin.database().ref(`users/${toUid}`).once("value");
-    const user = userSnap.val() as { pushToken?: string; displayName?: string } | null;
-
-    if (!user || !user.pushToken) {
-      logger.warn(`⚠️ Người nhận ${toUid} chưa có pushToken`);
-      return { success: false, message: "Người này chưa nhận được thông báo push" };
+    // Xử lý toUids (có thể là string hoặc mảng)
+    let recipients: string[] = [];
+    if (Array.isArray(toUids)) {
+      recipients = toUids;
+    } else if (typeof toUids === "string") {
+      recipients = [toUids];
     }
 
-    const roomId = makeDirectRoomId(fromUid, toUid);
+    const filteredUids = recipients.filter(uid => uid && uid !== fromUid);
+
+    if (filteredUids.length === 0) {
+      return { success: true, message: "Không có người nhận" };
+    }
+
+    // Lấy pushToken của tất cả người nhận
+    const promises = filteredUids.map(uid => 
+      admin.database().ref(`users/${uid}`).once("value")
+    );
+    const snapshots = await Promise.all(promises);
+
+    const tokens: string[] = [];
+    snapshots.forEach((snap, index) => {
+      const user = snap.val();
+      if (user?.pushToken) {
+        tokens.push(user.pushToken);
+      } else {
+        logger.warn(`⚠️ User ${filteredUids[index]} chưa có pushToken`);
+      }
+    });
+
+    if (tokens.length === 0) {
+      return { success: false, message: "Không có pushToken nào hợp lệ" };
+    }
+
+    // Xác định roomId
+    let finalRoomId = roomId;
+    if (!finalRoomId && filteredUids.length === 1 && !declined) {
+      finalRoomId = makeDirectRoomId(fromUid, filteredUids[0]);
+    }
+
+    const isGroup = filteredUids.length > 1;
+
     const payload = {
-      to: user.pushToken,
-      title: declined ? "📹 Cuộc gọi bị từ chối" : "📹 Cuộc gọi video",
+      to: tokens.length === 1 ? tokens[0] : tokens,
+      title: declined 
+        ? "📹 Cuộc gọi bị từ chối" 
+        : isGroup 
+          ? "📹 Cuộc gọi video nhóm" 
+          : "📹 Cuộc gọi video",
+
       body: declined 
-        ? `người bên kia đã từ chối cuộc gọi` 
-        : `${fromName} đang gọi video cho bạn`,
+        ? `Người bên kia đã từ chối cuộc gọi`
+        : isGroup
+          ? `${fromName} đang gọi video nhóm cho bạn`
+          : `${fromName} đang gọi video cho bạn`,
+
       data: {
         type: "video_call",
         fromUid,
-        declined,
         fromName,
-        roomId,
+        roomId: finalRoomId || "",
+        declined,
+        isGroup,
       },
       sound: "default",
       priority: "high",
-      channelId: "urgent_v2",  // <--- QUAN TRỌNG NHẤT
+      channelId: "urgent_v2",
     };
 
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -79,9 +126,14 @@ export const sendVideoCallPush = onCall(async (request) => {
     });
 
     const result = await response.json();
-    logger.info(`✅ Push video call đã gửi thành công đến ${toUid}`, result);
+    logger.info(`✅ Push video call đã gửi cho ${tokens.length} người`, result);
 
-    return { success: true, message: "Đã gửi cuộc gọi video", expoResult: result };
+    return { 
+      success: true, 
+      message: `Đã gửi cuộc gọi video cho ${tokens.length} người`, 
+      expoResult: result 
+    };
+
   } catch (error: any) {
     logger.error("❌ Lỗi sendVideoCallPush:", error);
     throw new Error(error.message || "Không thể gửi thông báo cuộc gọi");

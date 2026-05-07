@@ -52,32 +52,31 @@ export async function sendMessagePush(
 
 
 export async function sendVideoCallPush(
-  toUid: string,
+  toUids: string | string[],     
   fromUid: string,
   fromName: string,
-  roomId?: string,
-  declined: boolean = false     // chỉ giữ declined
+  roomId: string,                
+  declined: boolean = false      
 ) {
   try {
     const sendPush = httpsCallable(functions, "sendVideoCallPush");
 
-    console.log(`📤 Gửi push video call - declined = ${declined} | roomId = ${roomId}`);
+    const toUidsArray = Array.isArray(toUids) ? toUids : [toUids];
 
     const result = await sendPush({
-      toUid,
+      toUids: toUidsArray,
       fromUid,
       fromName,
       roomId,
-      declined,                    // ← Quan trọng: Phải truyền rõ ràng
+      declined,
     });
 
-    const data = result.data as any;
+    const data = result.data as { success: boolean; message?: string };
     console.log("✅ Gửi push video call thành công:", data);
-
     return data;
   } catch (error: any) {
-    console.error("❌ Lỗi sendVideoCallPush:", error);
-    Alert.alert('Lỗi', error.message || 'Không thể gửi thông báo');
+    console.error("❌ Lỗi gửi push video call:", error);
+    Alert.alert('Lỗi', error.message || 'Không thể gửi cuộc gọi video');
     throw error;
   }
 }

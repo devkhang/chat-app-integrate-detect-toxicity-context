@@ -5,16 +5,18 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
 import { ensureDirectRoom, saveMissedCall } from '../rtdb services/ChatService';
 import { sendVideoCallPush } from '../rtdb services/NotificationService';
+import { getUser } from '@/services/UserService';
 
 export default function IncomingCallScreen() {
-  const { fromUid, fromName, roomId } = useLocalSearchParams<{
+  const { fromUid, fromName, roomId, isGroup: isGroupParam } = useLocalSearchParams<{
     fromUid: string;
     fromName: string;
     roomId: string;
+    isGroup?: string; // "true" hoặc "false" dưới dạng chuỗi
   }>();
 
   const [ringSound, setRingSound] = useState<Audio.Sound | null>(null);
-  
+  const isGroup = isGroupParam === 'true';
   // Xóa bỏ state isRinging vì không thực sự cần thiết cho logic chạy chuông
   // const [isRinging, setIsRinging] = useState(true);
 
@@ -91,8 +93,7 @@ export default function IncomingCallScreen() {
     if (ringSound) await ringSound.stopAsync();
 
     try {
-      const finalRoomId = await ensureDirectRoom(fromUid, auth.currentUser!.uid);
-      router.replace(`/video-call/${finalRoomId}`);
+      router.replace(`/video-call/${roomId}`);
     } catch (error) {
       Alert.alert('Lỗi', 'Không thể tham gia cuộc gọi video');
       if (roomId) router.replace(`/chat/${roomId}`);
@@ -100,26 +101,49 @@ export default function IncomingCallScreen() {
     }
   };
 
-  // ==================== TỪ CHỐI CUỘC GỌI ====================
-  const handleDecline = async () => {
-    if (ringSound) await ringSound.stopAsync();
+// ==================== TỪ CHỐI CUỘC GỌI ====================
+const handleDecline = async () => {
+  if (ringSound) await ringSound.stopAsync();
 
-    if (fromUid && roomId && auth.currentUser) {
-      await sendVideoCallPush(
-        fromUid,                          // gửi cho A
-        auth.currentUser!.uid,            // từ B
-        auth.currentUser?.displayName || 'Bạn',
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !fromUid) return;
+
+    const myProfile = await getUser(currentUser.uid);
+
+    // ── GỬI THÔNG BÁO "DECLINED" VỀ CHO NGƯỜI GỌI ──
+    await sendVideoCallPush(
+      fromUid,                          // gửi lại cho người gọi
+      currentUser.uid,                  // người từ chối
+      myProfile?.displayName || 'Người dùng',
+      roomId as string,
+      true                              // declined = true
+    );
+
+    // ── CHỈ LƯU MISSED CALL KHI LÀ DIRECT CHAT ──
+    // console.log('📴 Cuộc gọi bị từ chối : ',isGroup);
+    if (!isGroup) {
+      await saveMissedCall(
         roomId as string,
-        true,                              // declined = true
+        fromUid,
+        fromName || 'Người gọi',
+        currentUser.uid
       );
-      await saveMissedCall(roomId as string, fromUid, fromName || 'Người gọi', auth.currentUser.uid);
     }
+    // Với group: KHÔNG lưu missed call (tránh duplicate)
 
-    // Alert.alert('Đã từ chối', 'Bạn đã từ chối cuộc gọi video');
+    // Quay về chat
+    if (roomId) {
+      router.replace(`/chat/${roomId}`);
+    } else {
+      router.dismiss();
+    }
+  } catch (error) {
+    console.error('Lỗi từ chối cuộc gọi:', error);
     if (roomId) router.replace(`/chat/${roomId}`);
     else router.dismiss();
-  };
-
+  }
+};
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Cuộc gọi video đến</Text>
