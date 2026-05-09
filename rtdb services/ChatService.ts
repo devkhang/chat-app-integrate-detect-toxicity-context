@@ -324,7 +324,7 @@ export async function saveMissedCall(
       senderId: fromUid,
       senderName: fromName,
       type: "missed_call",
-      text: `Cuộc gọi video nhỡ`,
+      text: `Cuộc gọi voice hoặc video nhỡ`,
       timestamp: createdAt,
       isMissedCall: true,
       missedBy: toUid,

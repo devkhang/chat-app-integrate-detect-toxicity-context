@@ -4,15 +4,16 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
 import { ensureDirectRoom, saveMissedCall } from '../rtdb services/ChatService';
-import { sendVideoCallPush } from '../rtdb services/NotificationService';
-import { getUser } from '@/services/UserService';
+import { sendCallPush } from '../rtdb services/NotificationService';
+import { getUser } from '@/rtdb services/UserService';
 
 export default function IncomingCallScreen() {
-  const { fromUid, fromName, roomId, isGroup: isGroupParam } = useLocalSearchParams<{
+  const { fromUid, fromName, roomId, isGroup: isGroupParam,type } = useLocalSearchParams<{
     fromUid: string;
     fromName: string;
     roomId: string;
     isGroup?: string; // "true" hoặc "false" dưới dạng chuỗi
+    type: "audio_call" | "video_call";   // ← Thêm dòng này
   }>();
 
   const [ringSound, setRingSound] = useState<Audio.Sound | null>(null);
@@ -93,9 +94,17 @@ export default function IncomingCallScreen() {
     if (ringSound) await ringSound.stopAsync();
 
     try {
-      router.replace(`/video-call/${roomId}`);
+      // ==================== SỬA Ở ĐÂY ====================
+      const targetRoute = type === 'audio_call' 
+        ? `/audio-call/${roomId}` 
+        : `/video-call/${roomId}`;
+      console.log(`✅ Tham gia cuộc gọi ${type} → Điều hướng đến:`, targetRoute);
+      router.replace(targetRoute);
+      // ===================================================
     } catch (error) {
-      Alert.alert('Lỗi', 'Không thể tham gia cuộc gọi video');
+      const callTypeText = type === 'audio_call' ? 'thoại' : 'video';
+      Alert.alert('Lỗi', `Không thể tham gia cuộc gọi ${callTypeText}`);
+      
       if (roomId) router.replace(`/chat/${roomId}`);
       else router.dismiss();
     }
@@ -112,11 +121,12 @@ const handleDecline = async () => {
     const myProfile = await getUser(currentUser.uid);
 
     // ── GỬI THÔNG BÁO "DECLINED" VỀ CHO NGƯỜI GỌI ──
-    await sendVideoCallPush(
+    await sendCallPush(
       fromUid,                          // gửi lại cho người gọi
       currentUser.uid,                  // người từ chối
       myProfile?.displayName || 'Người dùng',
       roomId as string,
+      type as 'audio_call' | 'video_call',   // ← Dùng biến callType thay vì hardcode
       true                              // declined = true
     );
 

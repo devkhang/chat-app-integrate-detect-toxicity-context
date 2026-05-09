@@ -51,15 +51,16 @@ export async function sendMessagePush(
 }
 
 
-export async function sendVideoCallPush(
+export async function sendCallPush(
   toUids: string | string[],     
   fromUid: string,
   fromName: string,
-  roomId: string,                
+  roomId: string,        
+  type: 'audio_call' | 'video_call',        
   declined: boolean = false      
 ) {
   try {
-    const sendPush = httpsCallable(functions, "sendVideoCallPush");
+    const sendPush = httpsCallable(functions, "sendCallPush");
 
     const toUidsArray = Array.isArray(toUids) ? toUids : [toUids];
 
@@ -68,15 +69,16 @@ export async function sendVideoCallPush(
       fromUid,
       fromName,
       roomId,
+      type,
       declined,
     });
 
     const data = result.data as { success: boolean; message?: string };
-    console.log("✅ Gửi push video call thành công:", data);
+    console.log("✅ Gửi push call thành công:", data);
     return data;
   } catch (error: any) {
-    console.error("❌ Lỗi gửi push video call:", error);
-    Alert.alert('Lỗi', error.message || 'Không thể gửi cuộc gọi video');
+    console.error("❌ Lỗi gửi push call:", error);
+    Alert.alert('Lỗi', error.message || 'Không thể gửi cuộc gọi đến người nhận');
     throw error;
   }
 }

@@ -19,13 +19,15 @@ import { useToxicDetection } from '../../hooks/useToxicDetection';
 import * as ImagePicker from 'expo-image-picker';
 import { sendMessage, sendImageMessage,subscribeTyping,setTyping,removeTypingOnDisconnect,sendVoiceMessage } from '../../rtdb services/ChatService';
 import { getUser } from '../../rtdb services/UserService';
-import { sendMessagePush, sendVideoCallPush } from '../../rtdb services/NotificationService';
+import { sendMessagePush, sendCallPush } from '../../rtdb services/NotificationService';
 import type { Message } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
-import { auth } from '@/firebase';
+import { auth, rtdb } from '@/firebase';
 // Thêm import ở đầu file
 import VoiceMessageBubble from '../../components/VoiceMessageBubble';
 import { Audio } from 'expo-av';
+import { stringToNumberId } from '@/functions/src/shared/utils';
+import { ref, update } from 'firebase/database';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -211,13 +213,15 @@ export default function ChatScreen() {
       }
 
       // Gọi hàm mới (5 tham số) - đã đồng bộ với backend
-      await sendVideoCallPush(
+      await sendCallPush(
         otherMembers,        // ← mảng người nhận (group hoặc direct)
         myUid,
         fromName,
         room.roomId,         // ← roomId để mọi người vào đúng phòng
+        'video_call',             // ← loại cuộc gọi
         false                // declined = false (cuộc gọi bình thường)
       );
+
 
       // Người gọi nhảy vào phòng video ngay
       router.push(`/video-call/${room.roomId}`);
@@ -226,6 +230,27 @@ export default function ChatScreen() {
       console.error("Lỗi gọi video:", err);
       Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi video. Vui lòng thử lại.');
     }
+  };
+
+  const handleAudioCall = async () => {
+    if (!myUid || !room) return;
+
+    const myProfile = await getUser(myUid);
+    const fromName = myProfile?.displayName || myProfile?.email || 'Bạn';
+
+    const otherMembers = room.members.filter((uid: string) => uid !== myUid);
+
+    await sendCallPush(
+      otherMembers,
+      myUid,
+      fromName,
+      room.roomId,
+      'audio_call',
+      false                // declined = false (cuộc gọi bình thường)                    // ← Quan trọng
+    );
+    
+
+    router.replace(`/audio-call/${room.roomId}`);
   };
 
   const onSend = async () => {
@@ -262,7 +287,9 @@ export default function ChatScreen() {
           </>
         )}
 
-
+      <TouchableOpacity style={styles.audioCallButton} onPress={handleAudioCall}>
+        <Text style={styles.audioCallText}>📞</Text>
+      </TouchableOpacity>
       {/* Nút Gọi Video nằm góc trên bên phải */}
       <TouchableOpacity style={styles.videoCallButton} onPress={handleVideoCall}>
         <Text style={styles.videoCallText}>📹</Text>
@@ -555,5 +582,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  audioCallButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#10a37f',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  audioCallText: {
+    fontSize: 22,
+    color: '#fff',
   },
 });

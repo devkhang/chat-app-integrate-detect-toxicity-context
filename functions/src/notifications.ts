@@ -32,13 +32,14 @@ export const savePushToken = onCall(async (request) => {
   }
 });
 
-export const sendVideoCallPush = onCall(async (request) => {
+export const sendCallPush = onCall(async (request) => {
   try {
     const { 
       toUids,           // ← CHỈ GIỮ LẠI cái này (hỗ trợ group)
       fromUid, 
       fromName, 
       declined = false,
+      type,
       roomId            
     } = request.data;
 
@@ -92,25 +93,31 @@ export const sendVideoCallPush = onCall(async (request) => {
 
     const isGroup = filteredUids.length > 1;
 
+    let title = "";
+    let body = "";
+
+    if (declined) {
+      title = "📴 Cuộc gọi bị từ chối";
+      body = `Người bên kia đã từ chối cuộc gọi`;
+    } 
+    else if (type === "audio_call") {
+      title = isGroup ? "📞 Cuộc gọi thoại nhóm" : "📞 Cuộc gọi thoại";
+      body = `${fromName} đang gọi thoại cho bạn`;
+    } 
+    else {
+      title = isGroup ? "📹 Cuộc gọi video nhóm" : "📹 Cuộc gọi video";
+      body = `${fromName} đang gọi video cho bạn`;
+    }
+
     const payload = {
       to: tokens.length === 1 ? tokens[0] : tokens,
-      title: declined 
-        ? "📹 Cuộc gọi bị từ chối" 
-        : isGroup 
-          ? "📹 Cuộc gọi video nhóm" 
-          : "📹 Cuộc gọi video",
-
-      body: declined 
-        ? `Người bên kia đã từ chối cuộc gọi`
-        : isGroup
-          ? `${fromName} đang gọi video nhóm cho bạn`
-          : `${fromName} đang gọi video cho bạn`,
-
+      title,
+      body,
       data: {
-        type: "video_call",
+        type,                    // audio_call hoặc video_call
         fromUid,
         fromName,
-        roomId: finalRoomId || "",
+        roomId: roomId || "",
         declined,
         isGroup,
       },
@@ -126,16 +133,12 @@ export const sendVideoCallPush = onCall(async (request) => {
     });
 
     const result = await response.json();
-    logger.info(`✅ Push video call đã gửi cho ${tokens.length} người`, result);
+    logger.info(`✅ Đã gửi ${type} push cho ${tokens.length} người`, result);
 
-    return { 
-      success: true, 
-      message: `Đã gửi cuộc gọi video cho ${tokens.length} người`, 
-      expoResult: result 
-    };
+    return { success: true, message: `Đã gửi cuộc gọi thành công` };
 
   } catch (error: any) {
-    logger.error("❌ Lỗi sendVideoCallPush:", error);
+    logger.error("❌ Lỗi sendCallPush:", error);
     throw new Error(error.message || "Không thể gửi thông báo cuộc gọi");
   }
 });

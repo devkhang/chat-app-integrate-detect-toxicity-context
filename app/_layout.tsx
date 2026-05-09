@@ -94,7 +94,7 @@ export default function RootLayout() {
       console.log('🔥 [FOREGROUND] Nhận push data:', JSON.stringify(data, null, 2));
 
 
-    if (data?.type === 'video_call') {
+    if (data?.type === 'video_call'|| data?.type === 'audio_call') {
       if (data?.declined === true) {
         console.log('📴 Cuộc gọi bị từ chối');
         router.replace(`/chat/${data.roomId}`);
@@ -117,7 +117,7 @@ export default function RootLayout() {
       if (data?.type === 'new_message' && data.roomId) {
         router.push(`/chat/${data.roomId}`);
       }
-      if (data?.type === 'video_call') {
+      if (data?.type === 'video_call'|| data?.type === 'audio_call') {
         router.push({
           pathname: '/incoming-call',
           params: data,
@@ -170,6 +170,13 @@ export default function RootLayout() {
           title: 'Thành viên nhóm',
           presentation: 'modal',
           animation: 'slide_from_bottom',
+        }} 
+      />
+      <Stack.Screen 
+        name="audio-call/[roomId]" 
+        options={{ 
+          headerShown: false, 
+          presentation: 'fullScreenModal' 
         }} 
       />
     </Stack>
