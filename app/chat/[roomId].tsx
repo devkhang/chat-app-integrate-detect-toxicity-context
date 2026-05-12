@@ -23,11 +23,12 @@ import { sendMessagePush, sendCallPush } from '../../rtdb services/NotificationS
 import type { Message } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
 import { auth, rtdb } from '@/firebase';
+import { styles } from './styles1';
 // Thêm import ở đầu file
 import VoiceMessageBubble from '../../components/VoiceMessageBubble';
 import { Audio } from 'expo-av';
 import { stringToNumberId } from '@/functions/src/shared/utils';
-import { ref, update } from 'firebase/database';
+import { ref, update ,onValue } from 'firebase/database';
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -45,6 +46,25 @@ export default function ChatScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [voiceDuration, setVoiceDuration] = useState(0);
+  const [selectedEmoji, setSelectedEmoji] = useState('👍'); // CHỈ 1 EMOJI
+  const [myProfile, setMyProfile] = useState<any>(null);
+// ==================== LOAD 1 EMOJI CHÍNH TỪ ROOM ====================
+  useEffect(() => {
+  if (!roomId) return;
+
+    const emojiRef = ref(rtdb, `rooms/${roomId}/quickEmojis`);
+
+    // Lắng nghe realtime
+    const unsubscribe = onValue(emojiRef, (snapshot) => {
+      if (snapshot.exists() && snapshot.val().length > 0) {
+        setSelectedEmoji(snapshot.val()[0]);
+      } else {
+        setSelectedEmoji('👍');
+      }
+    });
+
+    return () => unsubscribe(); // Cleanup khi rời trang
+  }, [roomId]);
 
   useEffect(() => {
     if (!otherUid) return;
@@ -55,6 +75,19 @@ export default function ChatScreen() {
       }
     });
   }, [otherUid]);
+
+  useEffect(() => {
+    if (!myUid) return;
+
+    const loadMyProfile = async () => {
+      const profile = await getUser(myUid);
+      if (profile) {
+        setMyProfile(profile);
+      }
+    };
+
+    loadMyProfile();
+  }, [myUid]);
 
   const handleTextChange = (newText: string) => {
     setChatText(newText);
@@ -124,7 +157,6 @@ export default function ChatScreen() {
         reader.readAsDataURL(blob);
       });
 
-      const myProfile = await getUser(myUid);
 
       await sendVoiceMessage(
         roomId as string,
@@ -149,8 +181,6 @@ export default function ChatScreen() {
     if (!myUid || !chatText.trim()) return;
 
     const trimmed = chatText.trim();     // ← Đây là dòng tạo trimmed
-
-    const myProfile = await getUser(myUid);
 
     try {
       // 1. Gửi tin nhắn thật vào database
@@ -181,7 +211,6 @@ export default function ChatScreen() {
 
     if (!result.canceled && result.assets[0]) {
       if (!myUid) return;
-      const myProfile = await getUser(myUid);
 
       try {
         await sendImageMessage(
@@ -235,7 +264,6 @@ export default function ChatScreen() {
   const handleAudioCall = async () => {
     if (!myUid || !room) return;
 
-    const myProfile = await getUser(myUid);
     const fromName = myProfile?.displayName || myProfile?.email || 'Bạn';
 
     const otherMembers = room.members.filter((uid: string) => uid !== myUid);
@@ -294,6 +322,17 @@ export default function ChatScreen() {
       <TouchableOpacity style={styles.videoCallButton} onPress={handleVideoCall}>
         <Text style={styles.videoCallText}>📹</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.infoButton}
+        onPress={() => {
+          router.push(`/chat/room-settings?roomId=${roomId}`);
+        }}
+      >
+        <View style={styles.infoIconContainer}>
+          <Text style={styles.infoIcon}>i</Text>
+        </View>
+      </TouchableOpacity>
     </View>
 
       <FlatList
@@ -304,6 +343,41 @@ export default function ChatScreen() {
         keyboardDismissMode="on-drag"
         renderItem={({ item }: { item: Message }) => {
           const mine = item.senderId === myUid;
+          const isEmoji = item.text && 
+          item.text.length <= 4 && 
+          /\p{Emoji}/u.test(item.text);   // Kiểm tra xem có phải emoji không
+
+          if (isEmoji) {
+            return (
+            <View style={[styles.messageContainer, mine ? styles.myMessageContainer : styles.otherMessageContainer]}>
+            {!mine && (
+              <Image
+                source={{ uri: item.senderPhotoURL || DEFAULT_AVATAR_BASE64 }}
+                style={styles.senderAvatar}
+              />
+            )}
+
+            <View 
+              style={[
+                styles.bubble, 
+                mine ? styles.myBubble : styles.otherBubble,
+                isEmoji && styles.emojiBubble   // ← Thêm style riêng cho emoji
+              ]}
+            >
+              {item.text && (
+                <Text 
+                  style={[
+                    mine ? styles.myText : styles.otherText,
+                    isEmoji && styles.emojiText   // ← Style chữ emoji
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              )}
+            </View>
+          </View>
+            );
+          }
           // ==================== THÔNG BÁO HỆ THỐNG ====================
           if (item.type === "system") {
             return (
@@ -420,180 +494,29 @@ export default function ChatScreen() {
             blurOnSubmit={false}
           />
 
-          <TouchableOpacity style={styles.sendButton} onPress={onSend} disabled={isAnalyzing}>
-            <Text style={styles.sendText}>Gửi</Text>
-          </TouchableOpacity>
+          {text.trim().length > 0 ? (
+            <TouchableOpacity style={styles.sendButton} onPress={onSend}>
+              <Text style={styles.sendText}>Gửi</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.singleEmojiButton}
+              onPress={() => {
+                sendMessage(
+                  roomId as string,
+                  selectedEmoji,
+                  myUid,
+                  myName,
+                  myProfile?.photoURL || DEFAULT_AVATAR_BASE64
+                );
+              }}
+            >
+              <Text style={styles.singleEmojiText}>{selectedEmoji}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: { fontSize: 18, fontWeight: '700', paddingVertical: 14, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#eee', textAlign: 'left' },
-  list: { padding: 16, flexGrow: 1, paddingBottom: 20 },
-
-  messageContainer: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, maxWidth: '85%' },
-  myMessageContainer: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
-  otherMessageContainer: { alignSelf: 'flex-start' },
-  senderAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8 },
-
-  bubble: { maxWidth: '75%', padding: 12, borderRadius: 18 },
-  myBubble: { backgroundColor: '#0084ff', borderBottomRightRadius: 4 },
-  otherBubble: { backgroundColor: '#f1f1f1', borderBottomLeftRadius: 4 },
-  myText: { color: '#fff', fontSize: 16 },
-  otherText: { color: '#222', fontSize: 16 },
-
-  chatImage: { width: 220, height: 220, borderRadius: 12, marginVertical: 4 },
-
-  inputArea: { padding: 12, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  imageButton: { width: 48, height: 48, backgroundColor: '#f0f0f0', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  imageButtonText: { fontSize: 26 },
-  input: { flex: 1, minHeight: 48, maxHeight: 160, borderWidth: 1, borderColor: '#ddd', borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, fontSize: 16, backgroundColor: '#f9f9f9' },
-  inputToxic: { borderColor: '#ef4444', borderWidth: 2, backgroundColor: '#fef2f2' },
-  sendButton: { backgroundColor: '#0084ff', height: 48, paddingHorizontal: 24, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-  sendText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-
-  modelLoadingText: { color: '#10a37f', fontSize: 13, marginBottom: 6, textAlign: 'center' },
-  analyzingText: { color: '#10a37f', fontSize: 13, marginBottom: 6, textAlign: 'center' },
-  warningRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', padding: 10, borderRadius: 8, marginBottom: 8 },
-  warningIcon: { fontSize: 18, marginRight: 8 },
-  warningText: { color: '#d97706', fontSize: 14, flex: 1 },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    backgroundColor: '#fff',
-  },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    flex: 1,
-  },
-
-  videoCallButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#28a745',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-
-  videoCallText: {
-    fontSize: 22,
-    color: '#fff',
-  },
-  missedCallContainer: {
-    alignSelf: 'center',
-    backgroundColor: '#fff3cd',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginVertical: 8,
-    maxWidth: '80%',
-  },
-
-  missedCallText: {
-    color: '#d97706',
-    fontSize: 15,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-
-  missedCallTime: {
-    fontSize: 13,
-    color: '#b45309',
-    fontWeight: '400',
-  },
-  typingContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f8f9fa',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  typingText: {
-    color: '#666',
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  voiceButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-
-  voiceButtonActive: {
-    backgroundColor: '#fee2e2',
-    transform: [{ scale: 1.1 }],
-  },
-    addMemberButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#28a745',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  addMemberText: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: '700',
-    lineHeight: 28,
-  },
-    membersButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#007bff',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  membersText: {
-    fontSize: 22,
-    color: '#fff',
-  },
-    systemMessageContainer: {
-    alignSelf: 'center',
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginVertical: 8,
-    maxWidth: '80%',
-  },
-  systemMessageText: {
-    color: '#555',
-    fontSize: 14,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  audioCallButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#10a37f',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  audioCallText: {
-    fontSize: 22,
-    color: '#fff',
-  },
-});
