@@ -102,10 +102,85 @@ export async function ensureAIRoom(myUid: string): Promise<string> {
 }
 
 
+// export function subscribeUserChatList(
+//   myUid: string,
+//   callback: (items: ChatListItem[]) => void,
+// ) {
+//   return onValue(ref(rtdb, `userRooms/${myUid}`), async (snapshot) => {
+//     const roomMap = snapshot.val() as Record<string, any> | null;
+//     const roomIds = roomMap ? Object.keys(roomMap) : [];
+
+//     if (roomIds.length === 0) {
+//       callback([]);
+//       return;
+//     }
+
+//     const roomSnaps = await Promise.all(
+//       roomIds.map((roomId) => get(ref(rtdb, `rooms/${roomId}`))),
+//     );
+
+//     const rooms = roomSnaps
+//       .filter((snap) => snap.exists())
+//       .map((snap) => snap.val() as Room);
+
+//     // ==================== BẢO VỆ MỚI: KIỂM TRA THÀNH VIÊN ====================
+//     const validRooms = rooms.filter((room) => {
+//       // 1. Không phải room AI
+//       if (room.type === 'ai') return false;
+
+//       // 2. Phải là thành viên của room
+//       if (!room.members || !room.members.includes(myUid)) {
+//         console.log(`🚫 Lọc bỏ room lạ: ${room.roomId}`);
+//         return false;
+//       }
+
+//       return true;
+//     });
+//     // =====================================================================
+
+//     const mapped = await Promise.all(
+//       validRooms.map(async (room) => {
+//         const userRoomData = roomMap?.[room.roomId] || {};
+//         const unreadCount = userRoomData.unreadCount || 0;
+
+//         let photoURL = DEFAULT_AVATAR_BASE64;
+//         let name = room.name || "Nhóm không tên";
+
+//         if (room.type === "direct") {
+//           const otherUid = room.members.find((uid) => uid !== myUid) || "";
+//           const otherUser = otherUid ? await getUser(otherUid) : null;
+//           name = otherUser?.displayName || otherUser?.email || "Người dùng";
+//           photoURL = otherUser?.photoURL || DEFAULT_AVATAR_BASE64;
+//         } else if (room.type === "group") {
+//           name = room.name || "Nhóm chat";
+//           photoURL = room.photoURL || DEFAULT_AVATAR_BASE64;
+//         }
+
+//         return {
+//           id: room.roomId,
+//           roomId: room.roomId,
+//           type: room.type,
+//           name,
+//           lastMessage: room.lastMessage || "Chưa có tin nhắn",
+//           photoURL,
+//           time: formatRoomTime(room.lastMessageAt),
+//           unreadCount,
+//         } as ChatListItem;
+//       }),
+//     );
+
+//     // Sắp xếp theo thời gian mới nhất
+//     mapped.sort((a, b) => (b.time && a.time ? new Date(b.time).getTime() - new Date(a.time).getTime() : 0));
+
+//     callback(mapped);
+//   });
+// }
+
 export function subscribeUserChatList(
   myUid: string,
   callback: (items: ChatListItem[]) => void,
 ) {
+  // Lắng nghe toàn bộ sự thay đổi ở node userRooms
   return onValue(ref(rtdb, `userRooms/${myUid}`), async (snapshot) => {
     const roomMap = snapshot.val() as Record<string, any> | null;
     const roomIds = roomMap ? Object.keys(roomMap) : [];
@@ -115,6 +190,7 @@ export function subscribeUserChatList(
       return;
     }
 
+    // Vẫn cần fetch dữ liệu bảng rooms để chạy kiểm tra thành viên
     const roomSnaps = await Promise.all(
       roomIds.map((roomId) => get(ref(rtdb, `rooms/${roomId}`))),
     );
@@ -141,11 +217,16 @@ export function subscribeUserChatList(
     const mapped = await Promise.all(
       validRooms.map(async (room) => {
         const userRoomData = roomMap?.[room.roomId] || {};
+        
+        // 👉 ĐIỂM KHÁC BIỆT 1: Lấy thông tin tin nhắn từ userRoomData (Real-time nhất)
+        const lastMessage = userRoomData.lastMessage || room.lastMessage || "Chưa có tin nhắn";
+        const lastMessageAt = userRoomData.lastMessageAt || room.lastMessageAt || 0;
         const unreadCount = userRoomData.unreadCount || 0;
 
         let photoURL = DEFAULT_AVATAR_BASE64;
         let name = room.name || "Nhóm không tên";
 
+        // Vẫn giữ logic lấy Tên và Ảnh của bạn (Tạm thời)
         if (room.type === "direct") {
           const otherUid = room.members.find((uid) => uid !== myUid) || "";
           const otherUser = otherUid ? await getUser(otherUid) : null;
@@ -156,21 +237,24 @@ export function subscribeUserChatList(
           photoURL = room.photoURL || DEFAULT_AVATAR_BASE64;
         }
 
+        // Ép kiểu mở rộng tạm thời để truyền `lastMessageAt` ra ngoài cho việc Sort
         return {
           id: room.roomId,
           roomId: room.roomId,
           type: room.type,
           name,
-          lastMessage: room.lastMessage || "Chưa có tin nhắn",
+          lastMessage,                   // ✅ Đã cập nhật Real-time
           photoURL,
-          time: formatRoomTime(room.lastMessageAt),
+          time: formatRoomTime(lastMessageAt),
+          lastMessageAt,                 // ✅ Thêm biến này phục vụ Sort
           unreadCount,
-        } as ChatListItem;
+        } as ChatListItem & { lastMessageAt: number }; 
       }),
     );
 
-    // Sắp xếp theo thời gian mới nhất
-    mapped.sort((a, b) => (b.time && a.time ? new Date(b.time).getTime() - new Date(a.time).getTime() : 0));
+    // 👉 ĐIỂM KHÁC BIỆT 2: Sắp xếp theo Timestamp (Số học) thay vì Chuỗi
+    // Đảm bảo tin nhắn mới nhất luôn nằm trên cùng 100%
+    mapped.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 
     callback(mapped);
   });
