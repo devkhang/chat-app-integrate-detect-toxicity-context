@@ -450,67 +450,21 @@ export async function saveMissedCall(
   roomId: string,
   fromUid: string,
   fromName: string,
-  toUid: string
+  toUid?: string // Có thể có hoặc không (dùng cho gọi nhóm)
 ) {
   try {
-    const createdAt = Date.now();
+    // Gọi hàm Cloud Function tên là 'saveMissedCall'
+    const saveMissedCallFunc = httpsCallable(functions, 'saveMissedCall');
+    
+    // Gửi data lên Server xử lý (Dù không dùng fromName để hiển thị nữa, bạn vẫn nên truyền lên log hoặc sau này dùng)
+    await saveMissedCallFunc({ 
+      roomId, 
+      fromUid, 
+      fromName, 
+      toUid 
+    });
 
-    // 1. Tạo message missed call
-    const messageRef = ref(rtdb, `roomMessages/${roomId}`);
-    const newMsgRef = push(messageRef);
-
-    const messagePayload = {
-      id: newMsgRef.key,
-      senderId: fromUid,
-      senderName: fromName,
-      type: "missed_call",
-      text: `Cuộc gọi voice hoặc video nhỡ`,
-      timestamp: createdAt,
-      isMissedCall: true,
-      missedBy: toUid,
-    };
-    // 2. Kiểm tra room có tồn tại chưa, nếu chưa thì tạo luôn
-    const roomRef = ref(rtdb, `rooms/${roomId}`);
-    const roomSnap = await get(roomRef);
-
-    const updates: Record<string, any> = {
-      [`roomMessages/${roomId}/${newMsgRef.key}`]: messagePayload,
-    };
-
-    if (!roomSnap.exists()) {
-      // Tạo room direct nếu chưa có
-      updates[`rooms/${roomId}`] = {
-        roomId,
-        type: "direct",
-        members: [fromUid, toUid].sort(),
-        createdBy: fromUid,
-        createdAt,
-        lastMessage: "Cuộc gọi video nhỡ",
-        lastMessageAt: createdAt,
-        lastSenderId: fromUid,
-      };
-
-      // Tạo userRooms cho cả 2 người
-      updates[`userRooms/${fromUid}/${roomId}`] = true;
-      updates[`userRooms/${toUid}/${roomId}`] = true;
-    } else {
-      // Room đã tồn tại → chỉ update lastMessage
-      updates[`rooms/${roomId}/lastMessage`] = "Cuộc gọi video nhỡ";
-      updates[`rooms/${roomId}/lastMessageAt`] = createdAt;
-      updates[`rooms/${roomId}/lastSenderId`] = fromUid;
-
-      const roomData = roomSnap.val() as Room;
-      roomData.members.forEach((uid: string) => {
-        updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
-        if (uid === toUid) {
-          updates[`userRooms/${uid}/${roomId}/unreadCount`] = increment(1);
-        }
-      });
-    }
-
-    await update(ref(rtdb), updates);
-
-    console.log(`✅ Đã lưu missed call thành công vào room ${roomId}`);
+    console.log(`✅ Đã gửi yêu cầu lưu missed call lên Server cho room ${roomId}`);
   } catch (error) {
     console.error("❌ Lỗi lưu missed call:", error);
   }

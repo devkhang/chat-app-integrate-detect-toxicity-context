@@ -1,4 +1,4 @@
-import { onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 
@@ -58,4 +58,102 @@ export const endVoiceCall = onCall(async (request) => {
     logger.error("❌ Lỗi endVoiceCall:", error);
     throw new Error(error.message || "Không thể kết thúc cuộc gọi");
   }
+});
+
+export const saveMissedCall = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Chưa đăng nhập.");
+  }
+
+  const { roomId, fromUid, fromName, toUid } = request.data;
+  
+  // 👉 1. LẤY UID CỦA NGƯỜI ĐANG THỰC THI HÀM NÀY (Người bấm Từ chối hoặc máy hết 30s)
+  const triggerUid = request.auth.uid; 
+  
+  if (!roomId || !fromUid || !fromName) {
+    throw new HttpsError("invalid-argument", "Thiếu dữ liệu.");
+  }
+
+  const db = admin.database();
+  const createdAt = Date.now();
+  
+  const msgForReceiver = `📞 Cuộc gọi nhỡ`;
+  const msgForCaller = `📞 Cuộc gọi đi không bắt máy`;
+
+  const updates: Record<string, any> = {};
+
+  // Lưu tin nhắn vào lịch sử chat chung
+  const newMsgKey = db.ref(`roomMessages/${roomId}`).push().key;
+  updates[`roomMessages/${roomId}/${newMsgKey}`] = {
+    id: newMsgKey,
+    senderId: fromUid,
+    senderName: fromName,
+    type: "missed_call",
+    text: msgForReceiver,
+    timestamp: createdAt,
+    isMissedCall: true,
+    missedBy: toUid || null,
+  };
+
+  const roomSnap = await db.ref(`rooms/${roomId}`).once("value");
+
+  if (!roomSnap.exists()) {
+    if (!toUid) return { success: false, message: "Thiếu toUid" };
+
+    updates[`rooms/${roomId}`] = {
+      roomId,
+      type: "direct",
+      members: [fromUid, toUid].sort(),
+      createdBy: fromUid,
+      createdAt,
+      lastMessage: msgForReceiver,
+      lastMessageAt: createdAt,
+      lastSenderId: fromUid,
+    };
+
+    updates[`userRooms/${fromUid}/${roomId}`] = {
+      lastMessageAt: createdAt,
+      lastMessage: msgForCaller, 
+      unreadCount: 0,
+    };
+    updates[`userRooms/${toUid}/${roomId}`] = {
+      lastMessageAt: createdAt,
+      lastMessage: msgForReceiver, 
+      // 👉 2. NẾU MÌNH TỰ TỪ CHỐI THÌ KHÔNG TẠO SỐ THÔNG BÁO (0)
+      unreadCount: triggerUid === toUid ? 0 : 1, 
+    };
+  } else {
+    updates[`rooms/${roomId}/lastMessage`] = msgForReceiver;
+    updates[`rooms/${roomId}/lastMessageAt`] = createdAt;
+    updates[`rooms/${roomId}/lastSenderId`] = fromUid;
+
+    const roomData = roomSnap.val();
+    
+    if (roomData.members && Array.isArray(roomData.members)) {
+      roomData.members.forEach((uid: string) => {
+        updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+
+        if (uid === fromUid) {
+          updates[`userRooms/${uid}/${roomId}/lastMessage`] = msgForCaller;
+        } else {
+          updates[`userRooms/${uid}/${roomId}/lastMessage`] = msgForReceiver;
+        }
+
+        // 👉 3. CHỈ TĂNG UNREAD NẾU HỌ KHÔNG PHẢI LÀ NGƯỜI ĐANG TỪ CHỐI CUỘC GỌI NÀY
+        if (toUid) {
+          if (uid === toUid && uid !== triggerUid) {
+            updates[`userRooms/${uid}/${roomId}/unreadCount`] = admin.database.ServerValue.increment(1);
+          }
+        } else {
+          // Xử lý cho nhóm
+          if (uid !== fromUid && uid !== triggerUid) {
+            updates[`userRooms/${uid}/${roomId}/unreadCount`] = admin.database.ServerValue.increment(1);
+          }
+        }
+      });
+    }
+  }
+
+  await db.ref().update(updates);
+  return { success: true };
 });

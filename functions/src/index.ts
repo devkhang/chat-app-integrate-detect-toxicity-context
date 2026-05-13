@@ -27,6 +27,7 @@ export const removePushToken = notificationsModule.removePushToken;
 // API cho Voice Call (mapping Agora UID ↔ Firebase UID)
 export const startVoiceCall = voiceCallModule.startVoiceCall;
 export const endVoiceCall = voiceCallModule.endVoiceCall;
+export const saveMissedCall = voiceCallModule.saveMissedCall;
 
 export * from "./messages/sendMessages"; // Export trực tiếp hàm gửi tin nhắn để client gọi
 export * from "./messages/groups"; // Export trực tiếp hàm quản lý nhóm để client gọi

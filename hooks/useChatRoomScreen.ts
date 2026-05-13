@@ -27,6 +27,7 @@ export function useChatRoomScreen(roomId?: string) {
 
     loadMyName();
   }, [myUid]);
+  
   // === MARK AS READ khi vào room ===
   useEffect(() => {
     if (!roomId || !myUid) return;

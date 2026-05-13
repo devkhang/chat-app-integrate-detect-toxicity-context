@@ -1,25 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { router, useLocalSearchParams } from 'expo-router';
-import { auth } from '../firebase';
+import { auth, rtdb } from '../firebase'; // ✅ Đã thêm rtdb
+import { ref, onValue } from 'firebase/database'; // ✅ Đã thêm import firebase database
 import { ensureDirectRoom, saveMissedCall } from '../rtdb services/ChatService';
 import { sendCallPush } from '../rtdb services/NotificationService';
 import { getUser } from '@/rtdb services/UserService';
+import { DEFAULT_AVATAR_BASE64 } from './constants';
 
 export default function IncomingCallScreen() {
-  const { fromUid, fromName, roomId, isGroup: isGroupParam,type } = useLocalSearchParams<{
+  const { fromUid, fromName, roomId, isGroup: isGroupParam, type } = useLocalSearchParams<{
     fromUid: string;
     fromName: string;
     roomId: string;
     isGroup?: string; // "true" hoặc "false" dưới dạng chuỗi
-    type: "audio_call" | "video_call";   // ← Thêm dòng này
+    type: "audio_call" | "video_call";   // ← Phân biệt gọi thoại hay video
   }>();
 
   const [ringSound, setRingSound] = useState<Audio.Sound | null>(null);
   const isGroup = isGroupParam === 'true';
-  // Xóa bỏ state isRinging vì không thực sự cần thiết cho logic chạy chuông
-  // const [isRinging, setIsRinging] = useState(true);
+
+  // 👉 Khai báo state hiển thị UI
+  const [displayTitle, setDisplayTitle] = useState(fromName || "Cuộc gọi đến");
+  const [displayAvatar, setDisplayAvatar] = useState(""); 
 
   // ==================== PHÁT TIẾNG REO CHUÔNG + TIMEOUT ====================
   useEffect(() => {
@@ -28,8 +32,6 @@ export default function IncomingCallScreen() {
 
     const playRing = async () => {
       try {
-        // 1. CẤU HÌNH AUDIO MODE (SỬA LỖI AUDIO FOCUS)
-        // Bắt buộc phải có đoạn này trước khi createAsync
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
           staysActiveInBackground: false,
@@ -39,7 +41,6 @@ export default function IncomingCallScreen() {
           playThroughEarpieceAndroid: false, // Phát ra loa ngoài
         });
 
-        // 2. TẠO VÀ PHÁT ÂM THANH
         const { sound: newSound } = await Audio.Sound.createAsync(
           require('../assets/heart_of_hope-pop-blast-ringtones-236915.mp3'),
           { isLooping: true }
@@ -55,23 +56,59 @@ export default function IncomingCallScreen() {
 
     playRing();
 
-    // 3. Tự động timeout sau 30 giây → Cuộc gọi nhỡ
+    // Tự động timeout sau 30 giây → Cuộc gọi nhỡ
     timeout = setTimeout(() => {
-      handleMissedCall(sound); // Truyền trực tiếp sound vào để đảm bảo tắt được chuông
+      handleMissedCall(sound); 
     }, 30000);
 
-    // 4. CLEANUP DỌN DẸP
     return () => {
       if (sound) {
         sound.stopAsync();
-        sound.unloadAsync(); // Trả lại quyền Audio cho hệ thống
+        sound.unloadAsync(); 
       }
       clearTimeout(timeout);
     };
-  }, []); // <--- QUAN TRỌNG: Để mảng rỗng [] để chỉ chạy 1 lần khi mount
+  }, []);
+
+  // ==================== LOGIC REALTIME: LẤY TÊN/ẢNH PHÒNG ====================
+useEffect(() => {
+    if (!roomId) return;
+
+    const roomRef = ref(rtdb, `rooms/${roomId}`);
+    
+    const unsubscribe = onValue(roomRef, (snapshot) => { // Không để async ở đây
+      const roomData = snapshot.val();
+
+      if (roomData) {
+        if (roomData.type === 'group' || isGroup === "true") {
+          setDisplayTitle(roomData.name || "Nhóm chat");
+          if (roomData.photoURL) {
+            setDisplayAvatar(roomData.photoURL);
+          }
+        } else {
+          setDisplayTitle(`${fromName}`);
+          
+          // 👉 Dùng hàm async tự gọi (IIFE) để xử lý await
+          (async () => {
+            if (fromUid) {
+              try {
+                const callerProfile = await getUser(fromUid);
+                if (callerProfile?.photoURL) {
+                  setDisplayAvatar(callerProfile.photoURL);
+                }
+              } catch (error) {
+                console.error("Lỗi lấy avatar người gọi:", error);
+              }
+            }
+          })();
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId, fromName, isGroup, fromUid]);
 
   // ==================== XỬ LÝ CUỘC GỌI NHỠ ====================
-  // Nhận tham số currentSound để phòng trường hợp state ringSound chưa kịp cập nhật
   const handleMissedCall = async (currentSound?: Audio.Sound | null) => {
     const soundToStop = currentSound || ringSound;
     if (soundToStop) {
@@ -94,13 +131,11 @@ export default function IncomingCallScreen() {
     if (ringSound) await ringSound.stopAsync();
 
     try {
-      // ==================== SỬA Ở ĐÂY ====================
       const targetRoute = type === 'audio_call' 
         ? `/audio-call/${roomId}` 
         : `/video-call/${roomId}`;
       console.log(`✅ Tham gia cuộc gọi ${type} → Điều hướng đến:`, targetRoute);
       router.replace(targetRoute);
-      // ===================================================
     } catch (error) {
       const callTypeText = type === 'audio_call' ? 'thoại' : 'video';
       Alert.alert('Lỗi', `Không thể tham gia cuộc gọi ${callTypeText}`);
@@ -110,55 +145,65 @@ export default function IncomingCallScreen() {
     }
   };
 
-// ==================== TỪ CHỐI CUỘC GỌI ====================
-const handleDecline = async () => {
-  if (ringSound) await ringSound.stopAsync();
+  // ==================== TỪ CHỐI CUỘC GỌI ====================
+  const handleDecline = async () => {
+    if (ringSound) await ringSound.stopAsync();
 
-  try {
-    const currentUser = auth.currentUser;
-    if (!currentUser || !fromUid) return;
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser || !fromUid) return;
 
-    const myProfile = await getUser(currentUser.uid);
+      const myProfile = await getUser(currentUser.uid);
 
-    // ── GỬI THÔNG BÁO "DECLINED" VỀ CHO NGƯỜI GỌI ──
-    await sendCallPush(
-      fromUid,                          // gửi lại cho người gọi
-      currentUser.uid,                  // người từ chối
-      myProfile?.displayName || 'Người dùng',
-      roomId as string,
-      type as 'audio_call' | 'video_call',   // ← Dùng biến callType thay vì hardcode
-      true                              // declined = true
-    );
-
-    // ── CHỈ LƯU MISSED CALL KHI LÀ DIRECT CHAT ──
-    // console.log('📴 Cuộc gọi bị từ chối : ',isGroup);
-    if (!isGroup) {
-      await saveMissedCall(
+      await sendCallPush(
+        fromUid,                          
+        currentUser.uid,                  
+        myProfile?.displayName || 'Người dùng',
         roomId as string,
-        fromUid,
-        fromName || 'Người gọi',
-        currentUser.uid
+        type as 'audio_call' | 'video_call', 
+        true                              
       );
-    }
-    // Với group: KHÔNG lưu missed call (tránh duplicate)
 
-    // Quay về chat
-    if (roomId) {
-      router.replace(`/chat/${roomId}`);
-    } else {
-      router.dismiss();
+      if (!isGroup) {
+        await saveMissedCall(
+          roomId as string,
+          fromUid,
+          fromName || 'Người gọi',
+          currentUser.uid
+        );
+      }
+
+      if (roomId) {
+        router.replace(`/chat/${roomId}`);
+      } else {
+        router.dismiss();
+      }
+    } catch (error) {
+      console.error('Lỗi từ chối cuộc gọi:', error);
+      if (roomId) router.replace(`/chat/${roomId}`);
+      else router.dismiss();
     }
-  } catch (error) {
-    console.error('Lỗi từ chối cuộc gọi:', error);
-    if (roomId) router.replace(`/chat/${roomId}`);
-    else router.dismiss();
-  }
-};
+  };
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Cuộc gọi video đến</Text>
-      <Text style={styles.callerName}>{fromName || 'Người gọi'}</Text>
-      <Text style={styles.subtitle}>Đang gọi cho bạn...</Text>
+      {/* Hiển thị Avatar của cá nhân hoặc nhóm (Nếu có) */}
+      {displayAvatar ? (
+         <Image source={{ uri: displayAvatar || DEFAULT_AVATAR_BASE64 }} style={styles.avatar} />
+      ) : (
+         <View style={styles.avatarPlaceholder} />
+      )}
+
+      {/* ✅ Hiển thị linh hoạt thoại hay video */}
+      <Text style={styles.title}>
+        {type === 'video_call' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến'}
+      </Text>
+      
+      <Text style={styles.callerName}>{displayTitle}</Text>
+      
+      <Text style={styles.subtitle}>
+        {isGroup ? "Đang gọi cho nhóm bạn..." : "Đang gọi cho bạn..."}
+      </Text>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity style={styles.declineBtn} onPress={handleDecline}>
@@ -173,7 +218,6 @@ const handleDecline = async () => {
   );
 }
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -182,20 +226,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 20,
+  },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#333',
+    marginBottom: 20,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     color: '#fff',
     marginBottom: 8,
   },
   callerName: {
-    fontSize: 42,
+    fontSize: 36,
     fontWeight: 'bold',
     color: '#0f0',
-    marginBottom: 20,
+    marginBottom: 10,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#ccc',
     marginBottom: 80,
   },
