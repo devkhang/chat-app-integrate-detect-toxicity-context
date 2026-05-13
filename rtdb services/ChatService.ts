@@ -5,6 +5,9 @@ import { snapshotToArray, makeDirectRoomId, formatRoomTime } from "@/functions/s
 import { getUser } from "./UserService";
 import { Alert } from "react-native";
 import { DEFAULT_AVATAR_BASE64 } from "@/app/constants";
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase';
+
 
 export async function ensureDirectRoom(myUid: string, otherUid: string) {
   const roomId = makeDirectRoomId(myUid, otherUid);
@@ -194,110 +197,181 @@ export function subscribeMessages(
   });
 }
 
-export async function sendMessage(
+// export async function sendMessage(
+//   roomId: string,
+//   text: string,
+//   senderId: string,
+//   senderName: string,
+//   senderPhotoURL: string   // ← THÊM tham số này
+// ) {
+//   const trimmed = text.trim();
+//   if (!trimmed) return;
+
+//   const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
+//   const messageId = msgRef.key as string;
+//   const createdAt = Date.now();
+
+//   const payload: Message = {
+//     id: messageId,
+//     text: trimmed,
+//     senderId,
+//     senderName,
+//     senderPhotoURL,           // ← SỬ DỤNG avatar thật
+//     type: "text",
+//     createdAt,
+//   };
+
+//   const updates: Record<string, any> = {
+//     [`roomMessages/${roomId}/${messageId}`]: payload,
+//     [`rooms/${roomId}/lastMessage`]: trimmed,
+//     [`rooms/${roomId}/lastMessageAt`]: createdAt,
+//     [`rooms/${roomId}/lastSenderId`]: senderId,
+//   };
+
+//   // === SỬA LỖI QUAN TRỌNG: Cập nhật cho TẤT CẢ thành viên (bao gồm người gửi) ===
+//   const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
+//   const roomData = roomSnap.val() as Room | null;
+
+//   if (roomData?.members?.length) {
+//     roomData.members.forEach((uid: string) => {
+//       // Tăng unread cho người khác
+//       if (uid !== senderId) {
+//         updates[`userRooms/${uid}/${roomId}/unreadCount`] = increment(1);
+//       }
+
+//       // Luôn cập nhật lastMessageAt cho mọi người → trigger inbox realtime
+//       updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+//     });
+//   }
+
+//   await update(ref(rtdb), updates);
+// }
+
+// export async function sendImageMessage(
+//   roomId: string,
+//   uri: string,
+//   senderId: string,
+//   senderName: string,
+//   senderPhotoURL: string   // ← THÊM tham số này
+// ) {
+//   // 1. Chuyển ảnh thành Base64
+//   const response = await fetch(uri);
+//   const blob = await response.blob();
+//   const base64 = await new Promise<string>((resolve, reject) => {
+//     const reader = new FileReader();
+//     reader.onload = () => resolve(reader.result as string);
+//     reader.onerror = reject;
+//     reader.readAsDataURL(blob);
+//   });
+
+//   // 2. Tạo message
+//   const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
+//   const messageId = msgRef.key as string;
+//   const createdAt = Date.now();
+
+//   const payload: Message = {
+//     id: messageId,
+//     imageBase64: base64,
+//     imageType: 'image/jpeg',
+//     senderId,
+//     senderName,
+//     senderPhotoURL,           // ← SỬ DỤNG avatar thật
+//     type: 'image',
+//     createdAt,
+//   };
+
+//   const updates: Record<string, any> = {
+//     [`roomMessages/${roomId}/${messageId}`]: payload,
+//     [`rooms/${roomId}/lastMessage`]: '📸 Hình ảnh',
+//     [`rooms/${roomId}/lastMessageAt`]: createdAt,
+//     [`rooms/${roomId}/lastSenderId`]: senderId,
+//   };
+
+//   // Cập nhật unread cho mọi người
+//   const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
+//   const roomData = roomSnap.val() as Room | null;
+//   if (roomData?.members?.length) {
+//     roomData.members.forEach((uid: string) => {
+//       if (uid !== senderId) {
+//         updates[`userRooms/${uid}/${roomId}/unreadCount`] =
+//           (updates[`userRooms/${uid}/${roomId}/unreadCount`] || 0) + 1;
+//       }
+//       updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+//     });
+//   }
+
+//   await update(ref(rtdb), updates);
+// }
+
+// export async function sendVoiceMessage(
+//   roomId: string,
+//   voiceBase64: string,
+//   duration: number,
+//   senderId: string,
+//   senderName: string,
+//   senderPhotoURL: string
+// ) {
+//   const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
+//   const messageId = msgRef.key as string;
+//   const createdAt = Date.now();
+
+//   const payload: Message = {
+//     id: messageId,
+//     type: "voice",
+//     voiceBase64,
+//     voiceDuration: Math.round(duration),
+//     voiceMimeType: "audio/m4a",
+//     senderId,
+//     senderName,
+//     senderPhotoURL,
+//     createdAt,
+//   };
+
+//   const updates: Record<string, any> = {
+//     [`roomMessages/${roomId}/${messageId}`]: payload,
+//     [`rooms/${roomId}/lastMessage`]: "🎤 Tin nhắn thoại",
+//     [`rooms/${roomId}/lastMessageAt`]: createdAt,
+//     [`rooms/${roomId}/lastSenderId`]: senderId,
+//   };
+
+//   const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
+//   const roomData = roomSnap.val() as Room | null;
+
+//   if (roomData?.members?.length) {
+//     roomData.members.forEach((uid: string) => {
+//       if (uid !== senderId) {
+//         updates[`userRooms/${uid}/${roomId}/unreadCount`] =
+//           (updates[`userRooms/${uid}/${roomId}/unreadCount`] || 0) + 1;
+//       }
+//       updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+//     });
+//   }
+
+//   await update(ref(rtdb), updates);
+// }
+
+export async function sendChatMessage(
   roomId: string,
-  text: string,
-  senderId: string,
-  senderName: string,
-  senderPhotoURL: string   // ← THÊM tham số này
+  type: 'text' | 'image' | 'voice',
+  content: string,  // Text hoặc Base64
+  duration?: number // Chỉ dùng cho Voice
 ) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-
-  const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
-  const messageId = msgRef.key as string;
-  const createdAt = Date.now();
-
-  const payload: Message = {
-    id: messageId,
-    text: trimmed,
-    senderId,
-    senderName,
-    senderPhotoURL,           // ← SỬ DỤNG avatar thật
-    type: "text",
-    createdAt,
-  };
-
-  const updates: Record<string, any> = {
-    [`roomMessages/${roomId}/${messageId}`]: payload,
-    [`rooms/${roomId}/lastMessage`]: trimmed,
-    [`rooms/${roomId}/lastMessageAt`]: createdAt,
-    [`rooms/${roomId}/lastSenderId`]: senderId,
-  };
-
-  // === SỬA LỖI QUAN TRỌNG: Cập nhật cho TẤT CẢ thành viên (bao gồm người gửi) ===
-  const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
-  const roomData = roomSnap.val() as Room | null;
-
-  if (roomData?.members?.length) {
-    roomData.members.forEach((uid: string) => {
-      // Tăng unread cho người khác
-      if (uid !== senderId) {
-        updates[`userRooms/${uid}/${roomId}/unreadCount`] = increment(1);
-      }
-
-      // Luôn cập nhật lastMessageAt cho mọi người → trigger inbox realtime
-      updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+  try {
+    const sendMsgFunc = httpsCallable(functions, 'sendChatMessage');
+    
+    // Chỉ gửi những dữ liệu cần thiết, Server sẽ tự biết bạn là ai
+    const response = await sendMsgFunc({
+      roomId,
+      type,
+      content,
+      duration
     });
+
+    return response.data;
+  } catch (error) {
+    console.error(`❌ Lỗi gửi tin nhắn (${type}):`, error);
+    throw error;
   }
-
-  await update(ref(rtdb), updates);
-}
-
-export async function sendImageMessage(
-  roomId: string,
-  uri: string,
-  senderId: string,
-  senderName: string,
-  senderPhotoURL: string   // ← THÊM tham số này
-) {
-  // 1. Chuyển ảnh thành Base64
-  const response = await fetch(uri);
-  const blob = await response.blob();
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-
-  // 2. Tạo message
-  const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
-  const messageId = msgRef.key as string;
-  const createdAt = Date.now();
-
-  const payload: Message = {
-    id: messageId,
-    imageBase64: base64,
-    imageType: 'image/jpeg',
-    senderId,
-    senderName,
-    senderPhotoURL,           // ← SỬ DỤNG avatar thật
-    type: 'image',
-    createdAt,
-  };
-
-  const updates: Record<string, any> = {
-    [`roomMessages/${roomId}/${messageId}`]: payload,
-    [`rooms/${roomId}/lastMessage`]: '📸 Hình ảnh',
-    [`rooms/${roomId}/lastMessageAt`]: createdAt,
-    [`rooms/${roomId}/lastSenderId`]: senderId,
-  };
-
-  // Cập nhật unread cho mọi người
-  const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
-  const roomData = roomSnap.val() as Room | null;
-  if (roomData?.members?.length) {
-    roomData.members.forEach((uid: string) => {
-      if (uid !== senderId) {
-        updates[`userRooms/${uid}/${roomId}/unreadCount`] =
-          (updates[`userRooms/${uid}/${roomId}/unreadCount`] || 0) + 1;
-      }
-      updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
-    });
-  }
-
-  await update(ref(rtdb), updates);
 }
 
 export async function markAsRead(myUid: string, roomId: string) {
@@ -430,52 +504,6 @@ export function removeTypingOnDisconnect(roomId: string, uid: string): void {
   onDisconnect(typingRef).remove();
 }
 
-export async function sendVoiceMessage(
-  roomId: string,
-  voiceBase64: string,
-  duration: number,
-  senderId: string,
-  senderName: string,
-  senderPhotoURL: string
-) {
-  const msgRef = push(ref(rtdb, `roomMessages/${roomId}`));
-  const messageId = msgRef.key as string;
-  const createdAt = Date.now();
-
-  const payload: Message = {
-    id: messageId,
-    type: "voice",
-    voiceBase64,
-    voiceDuration: Math.round(duration),
-    voiceMimeType: "audio/m4a",
-    senderId,
-    senderName,
-    senderPhotoURL,
-    createdAt,
-  };
-
-  const updates: Record<string, any> = {
-    [`roomMessages/${roomId}/${messageId}`]: payload,
-    [`rooms/${roomId}/lastMessage`]: "🎤 Tin nhắn thoại",
-    [`rooms/${roomId}/lastMessageAt`]: createdAt,
-    [`rooms/${roomId}/lastSenderId`]: senderId,
-  };
-
-  const roomSnap = await get(ref(rtdb, `rooms/${roomId}`));
-  const roomData = roomSnap.val() as Room | null;
-
-  if (roomData?.members?.length) {
-    roomData.members.forEach((uid: string) => {
-      if (uid !== senderId) {
-        updates[`userRooms/${uid}/${roomId}/unreadCount`] =
-          (updates[`userRooms/${uid}/${roomId}/unreadCount`] || 0) + 1;
-      }
-      updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
-    });
-  }
-
-  await update(ref(rtdb), updates);
-}
 
 // ==================== GỬI THÔNG BÁO HỆ THỐNG VÀO CHAT ====================
 export async function sendSystemMessage(

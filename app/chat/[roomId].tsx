@@ -17,7 +17,7 @@ import { useLocalSearchParams,useRouter } from 'expo-router';
 import { useChatRoomScreen } from '../../hooks/useChatRoomScreen';
 import { useToxicDetection } from '../../hooks/useToxicDetection';
 import * as ImagePicker from 'expo-image-picker';
-import { sendMessage, sendImageMessage,subscribeTyping,setTyping,removeTypingOnDisconnect,sendVoiceMessage } from '../../rtdb services/ChatService';
+import { sendChatMessage,subscribeTyping,setTyping,removeTypingOnDisconnect } from '../../rtdb services/ChatService';
 import { getUser } from '../../rtdb services/UserService';
 import { sendMessagePush, sendCallPush } from '../../rtdb services/NotificationService';
 import type { Message } from '../../types';
@@ -158,14 +158,7 @@ export default function ChatScreen() {
       });
 
 
-      await sendVoiceMessage(
-        roomId as string,
-        base64,
-        voiceDuration,
-        myUid,
-        myName,
-        myProfile?.photoURL || DEFAULT_AVATAR_BASE64
-      );
+      sendChatMessage(roomId as string, 'voice', base64, voiceDuration);
 
       setVoiceDuration(0);
     } catch (err) {
@@ -184,7 +177,7 @@ export default function ChatScreen() {
 
     try {
       // 1. Gửi tin nhắn thật vào database
-      await sendMessage(roomId as string, trimmed, myUid, 'Bạn', myProfile?.photoURL || DEFAULT_AVATAR_BASE64);
+      await sendChatMessage(roomId as string, 'text', trimmed);
 
       // 2. Gửi push thông báo
       if (room?.type === 'direct' && otherUid) {
@@ -213,12 +206,10 @@ export default function ChatScreen() {
       if (!myUid) return;
 
       try {
-        await sendImageMessage(
+        await sendChatMessage(
           roomId as string,
-          result.assets[0].uri,
-          myUid,
-          'Bạn',
-          myProfile?.photoURL || DEFAULT_AVATAR_BASE64
+          'image',
+          result.assets[0].uri
         );
       } catch (err) {
         Alert.alert('Lỗi', 'Không thể gửi hình ảnh');
@@ -502,13 +493,7 @@ export default function ChatScreen() {
             <TouchableOpacity
               style={styles.singleEmojiButton}
               onPress={() => {
-                sendMessage(
-                  roomId as string,
-                  selectedEmoji,
-                  myUid,
-                  myName,
-                  myProfile?.photoURL || DEFAULT_AVATAR_BASE64
-                );
+                sendChatMessage(roomId as string, 'text', selectedEmoji);
               }}
             >
               <Text style={styles.singleEmojiText}>{selectedEmoji}</Text>

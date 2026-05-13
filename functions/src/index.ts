@@ -27,3 +27,5 @@ export const sendMessagePush = notificationsModule.sendMessagePush;
 // API cho Voice Call (mapping Agora UID ↔ Firebase UID)
 export const startVoiceCall = voiceCallModule.startVoiceCall;
 export const endVoiceCall = voiceCallModule.endVoiceCall;
+
+export * from "./messages/sendMessages"; // Export trực tiếp hàm gửi tin nhắn để client gọi
