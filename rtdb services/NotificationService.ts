@@ -82,3 +82,14 @@ export async function sendCallPush(
     throw error;
   }
 }
+
+export async function removePushToken() {
+  try {
+    const removeTokenFunc = httpsCallable(functions, "removePushToken");
+    await removeTokenFunc();
+    console.log("✅ Đã xóa push token trước khi đăng xuất");
+  } catch (error) {
+    console.error("❌ Lỗi khi xóa push token:", error);
+    // Ở đây không cần Alert vì người dùng đang muốn đăng xuất, cứ để họ đăng xuất bình thường
+  }
+}

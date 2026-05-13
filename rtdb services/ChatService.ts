@@ -39,37 +39,19 @@ export async function ensureDirectRoom(myUid: string, otherUid: string) {
 }
 
 export async function createGroupRoom(
-  myUid: string,
+  myUid: string, // Giữ biến này cho UI cũ khỏi lỗi, dù Server không dùng tới
   groupName: string,
   selectedUids: string[],
 ) {
-  const roomRef = push(ref(rtdb, "rooms"));
-  const roomId = roomRef.key as string;
-  const members = Array.from(new Set([myUid, ...selectedUids]));
-
-  const payload: Room = {
-    roomId,
-    type: "group",
-    name: groupName.trim(),
-    members,
-    admins: [myUid],
-    createdBy: myUid,
-    createdAt: Date.now(),
-    lastMessage: "",
-    lastMessageAt: null,
-    lastSenderId: "",
-  };
-
-  const updates: Record<string, unknown> = {
-    [`rooms/${roomId}`]: payload,
-  };
-
-  members.forEach((uid) => {
-    updates[`userRooms/${uid}/${roomId}`] = true;
-  });
-
-  await update(ref(rtdb), updates);
-  return roomId;
+  try {
+    const createGroupFunc = httpsCallable(functions, 'createGroupRoom');
+    const response = await createGroupFunc({ groupName, selectedUids });
+    return (response.data as any).roomId;
+  } catch (error: any) {
+    console.error("❌ Lỗi tạo nhóm:", error);
+    Alert.alert("Lỗi", error?.message || "Không thể tạo nhóm lúc này");
+    throw error;
+  }
 }
 
 export async function ensureAIRoom(myUid: string): Promise<string> {
@@ -622,145 +604,44 @@ export async function sendSystemMessage(
 export async function addMembersToGroup(
   roomId: string,
   newMemberUids: string[],
-  myUid: string
+  myUid: string // Giữ cho UI cũ khỏi lỗi
 ) {
   if (!newMemberUids.length) return;
-
-  const roomRef = ref(rtdb, `rooms/${roomId}`);
-  const roomSnap = await get(roomRef);
-  if (!roomSnap.exists()) {
-    Alert.alert("Lỗi", "Không tìm thấy nhóm chat");
-    return;
+  try {
+    const addMembersFunc = httpsCallable(functions, 'addMembersToGroup');
+    await addMembersFunc({ roomId, newMemberUids });
+    Alert.alert("Thành công", `Đã thêm ${newMemberUids.length} thành viên`);
+  } catch (error: any) {
+    console.error("❌ Lỗi thêm thành viên:", error);
+    Alert.alert("Lỗi", error?.message || "Không thể thêm thành viên");
   }
-
-  const room = roomSnap.val() as Room;
-  if (room.type !== "group") {
-    Alert.alert("Lỗi", "Chỉ có thể thêm thành viên vào nhóm chat");
-    return;
-  }
-
-  const currentMembers = room.members || [];
-  const membersToAdd = newMemberUids.filter(uid => !currentMembers.includes(uid));
-
-  if (!membersToAdd.length) {
-    Alert.alert("Thông báo", "Tất cả người đã là thành viên nhóm");
-    return;
-  }
-
-  const updates: Record<string, any> = {};
-  updates[`rooms/${roomId}/members`] = [...currentMembers, ...membersToAdd];
-
-  membersToAdd.forEach(uid => {
-    updates[`userRooms/${uid}/${roomId}`] = { unreadCount: 0 };
-  });
-
-  await update(ref(rtdb), updates);
-
-  // Gửi thông báo hệ thống
-  const myUser = await getUser(myUid);
-  const names = await Promise.all(membersToAdd.map(uid => getUser(uid)));
-  const nameList = names.map(u => u?.displayName || "Người dùng").join(", ");
-
-  await sendSystemMessage(
-    roomId,
-    `${myUser?.displayName || "Admin"} đã thêm ${nameList} vào nhóm`,
-    "Hệ thống"
-  );
-
-  Alert.alert("Thành công", `Đã thêm ${membersToAdd.length} thành viên`);
 }
-
 // ==================== XÓA THÀNH VIÊN (có thông báo) ====================
 export async function removeMemberFromGroup(
   roomId: string,
   memberUidToRemove: string,
-  myUid: string
+  myUid: string // Giữ cho UI cũ khỏi lỗi
 ) {
-  const roomRef = ref(rtdb, `rooms/${roomId}`);
-  const roomSnap = await get(roomRef);
-  if (!roomSnap.exists()) {
-    Alert.alert("Lỗi", "Không tìm thấy nhóm chat");
-    return;
+  try {
+    const removeMemberFunc = httpsCallable(functions, 'removeMemberFromGroup');
+    await removeMemberFunc({ roomId, memberUidToRemove });
+    Alert.alert("Thành công", "Đã xóa thành viên khỏi nhóm");
+  } catch (error: any) {
+    console.error("❌ Lỗi xóa thành viên:", error);
+    Alert.alert("Lỗi", error?.message || "Không thể xóa thành viên lúc này");
   }
-
-  const room = roomSnap.val() as Room;
-  if (room.type !== "group") {
-    Alert.alert("Lỗi", "Chỉ áp dụng cho nhóm chat");
-    return;
-  }
-
-  if (!room.admins.includes(myUid)) {
-    Alert.alert("Lỗi", "Chỉ Admin mới được xóa thành viên");
-    return;
-  }
-
-  if (memberUidToRemove === myUid) {
-    Alert.alert("Lỗi", "Bạn không thể tự xóa chính mình");
-    return;
-  }
-
-  const currentMembers = room.members || [];
-  if (!currentMembers.includes(memberUidToRemove)) {
-    Alert.alert("Thông báo", "Người này không còn trong nhóm");
-    return;
-  }
-
-  const updates: Record<string, any> = {};
-  updates[`rooms/${roomId}/members`] = currentMembers.filter(
-    (uid: string) => uid !== memberUidToRemove
-  );
-  updates[`userRooms/${memberUidToRemove}/${roomId}`] = null;
-
-  await update(ref(rtdb), updates);
-
-  const remover = await getUser(myUid);
-  const removedUser = await getUser(memberUidToRemove);
-
-  await sendSystemMessage(
-    roomId,
-    `${remover?.displayName || "Admin"} đã xóa ${removedUser?.displayName || "một thành viên"} khỏi nhóm`,
-    "Hệ thống"
-  );
-
-  Alert.alert("Thành công", "Đã xóa thành viên khỏi nhóm");
 }
 
 // ==================== RỜI NHÓM (có thông báo) ====================
 export async function leaveGroup(roomId: string, myUid: string) {
-  const roomRef = ref(rtdb, `rooms/${roomId}`);
-  const roomSnap = await get(roomRef);
-  if (!roomSnap.exists()) {
-    Alert.alert("Lỗi", "Không tìm thấy nhóm");
-    return;
+  try {
+    const leaveGroupFunc = httpsCallable(functions, 'leaveGroup');
+    await leaveGroupFunc({ roomId });
+    Alert.alert("Thành công", "Bạn đã rời khỏi nhóm");
+  } catch (error: any) {
+    console.error("❌ Lỗi rời nhóm:", error);
+    Alert.alert("Lỗi", error?.message || "Không thể rời nhóm");
   }
-
-  const room = roomSnap.val() as Room;
-  if (room.type !== "group") {
-    Alert.alert("Lỗi", "Chỉ áp dụng cho nhóm chat");
-    return;
-  }
-
-  if (!room.members.includes(myUid)) {
-    Alert.alert("Lỗi", "Bạn không phải thành viên của nhóm");
-    return;
-  }
-
-  const updates: Record<string, any> = {};
-  updates[`rooms/${roomId}/members`] = room.members.filter(
-    (uid: string) => uid !== myUid
-  );
-  updates[`userRooms/${myUid}/${roomId}`] = null;
-
-  await update(ref(rtdb), updates);
-
-  const myUser = await getUser(myUid);
-  await sendSystemMessage(
-    roomId,
-    `${myUser?.displayName || "Một thành viên"} đã rời khỏi nhóm`,
-    "Hệ thống"
-  );
-
-  Alert.alert("Thành công", "Bạn đã rời khỏi nhóm");
 }
 
 

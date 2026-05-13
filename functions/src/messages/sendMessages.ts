@@ -79,7 +79,8 @@ export const sendChatMessage = onCall(async (request) => {
       if (uid !== senderId) {
         updates[`userRooms/${uid}/${roomId}/unreadCount`] = admin.database.ServerValue.increment(1);
       }
-      updates[`userRooms/${uid}/${roomId}/lastMessageAt`] 
+      updates[`userRooms/${uid}/${roomId}/lastMessageAt`] = createdAt;
+      updates[`userRooms/${uid}/${roomId}/lastMessage`] = lastMessageStr;
     });
   }
 

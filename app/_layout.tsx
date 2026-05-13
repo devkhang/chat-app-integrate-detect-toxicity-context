@@ -31,6 +31,8 @@ export default function RootLayout() {
   useEffect(() => {
     const register = async () => {
       try {
+        if (!user) return;
+
         if (Platform.OS === 'android') {
           await Notifications.setNotificationChannelAsync('urgent_v2', {
             name: 'Tin nhắn & Cuộc gọi',
@@ -40,7 +42,7 @@ export default function RootLayout() {
           });
         }
 
-        if (Device.isDevice) {
+        if (Device.isDevice || Platform.OS === 'android') {
           const { status } = await Notifications.requestPermissionsAsync();
           if (status !== 'granted') return;
 
@@ -60,7 +62,7 @@ export default function RootLayout() {
       }
     };
     register();
-  }, []);
+  }, [user]);
 
   //   useEffect(() => {
   //   const handleAppStateChange = (nextAppState: string) => {

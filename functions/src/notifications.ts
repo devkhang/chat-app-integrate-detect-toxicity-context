@@ -1,4 +1,4 @@
-import { onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import { makeDirectRoomId } from "./shared/utils";
@@ -204,5 +204,26 @@ export const sendMessagePush = onCall(async (request) => {
   } catch (error: any) {
     logger.error("❌ Lỗi sendMessagePush:", error);
     throw new Error(error.message || "Không thể gửi thông báo tin nhắn");
+  }
+});
+
+export const removePushToken = onCall(async (request) => {
+  // 1. Kiểm tra đăng nhập
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Yêu cầu đăng nhập.");
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.database();
+
+  try {
+    // 2. Xóa Push Token của user này khỏi Database
+    // (⚠️ LƯU Ý: Thay đổi đường dẫn này cho khớp với nơi bạn đang lưu Token ở hàm savePushToken nhé)
+    await db.ref(`users/${uid}/pushToken`).remove(); 
+    
+    return { success: true, message: "Đã xóa token thành công" };
+  } catch (error) {
+    console.error("Lỗi khi xóa Push Token:", error);
+    throw new HttpsError("internal", "Không thể xóa token trên server");
   }
 });

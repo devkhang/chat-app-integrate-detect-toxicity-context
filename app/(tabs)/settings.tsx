@@ -13,6 +13,7 @@ import { onValue, ref } from 'firebase/database';        // ← THÊM DÒNG NÀY
 import { auth, rtdb } from '../../firebase';            // ← ĐẢM BẢO import rtdb
 import type { AppUser } from '../../types';
 import { DEFAULT_AVATAR_BASE64 } from '../constants';
+import { removePushToken } from '../../rtdb services/NotificationService';
 
 export default function SettingsScreen() {
   const [profile, setProfile] = useState<AppUser | null>(null);
@@ -42,6 +43,7 @@ export default function SettingsScreen() {
 
   const handleLogout = async () => {
     try {
+      await removePushToken();
       await signOut(auth);
       Alert.alert('Thành công', 'Đăng xuất thành công!');
       router.replace('/login');
