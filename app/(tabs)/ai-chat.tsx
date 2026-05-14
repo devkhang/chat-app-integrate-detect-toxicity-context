@@ -16,9 +16,19 @@ import { useAIChat } from '../../hooks/useAIChat';
 import type { Message } from '../../types';
 
 export default function AIChatScreen() {
-  const { messages, text, setText, handleSend, isLoading, myUid } = useAIChat();
+  const { messages, text, setText, handleSend, isLoading, myUid ,isTyping } = useAIChat();
   const flatListRef = useRef<FlatList>(null); 
-
+  const TypingIndicator = () => {
+    return (
+      <View className="flex-row items-center p-3 bg-gray-200 self-start rounded-2xl ml-3 mb-2">
+        <View className="flex-row space-x-1">
+          <View className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <View className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <View className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </View>
+      </View>
+    );
+  };
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -76,6 +86,9 @@ export default function AIChatScreen() {
               <Text style={styles.emptyText}>Bắt đầu cuộc trò chuyện với Gemini AI</Text>
             </View>
           }
+          ListFooterComponent={() => (
+            isTyping ? <TypingIndicator /> : <View className="h-4" />
+          )}
         />
 
         {/* INPUT AREA */}

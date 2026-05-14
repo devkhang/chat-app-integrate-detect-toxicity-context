@@ -10,7 +10,7 @@ export function useAIChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
+  const [isTyping, setIsTyping] = useState(false); // <--- Thêm dòng này
   const myUid = auth.currentUser?.uid || '';
   const [roomId, setRoomId] = useState<string>('');
 
@@ -39,7 +39,7 @@ export function useAIChat() {
     try {
       // 1. Gửi tin nhắn của người dùng (Nằm bên PHẢI)
       await sendChatMessage(roomId, 'text', userMessage);
-
+      setIsTyping(true);
       // Gọi API Gemini
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
@@ -90,8 +90,9 @@ export function useAIChat() {
       console.error('🚨 Lỗi Gemini API:', error);
     } finally {
       setIsLoading(false);
+      setIsTyping(false); // Tắt dấu ...
     }
   };
 
-  return { messages, text, setText, handleSend, isLoading, myUid };
+  return { messages, text, setText, handleSend, isLoading, myUid , isTyping}; // <--- Trả về isTyping để UI sử dụng
 }
