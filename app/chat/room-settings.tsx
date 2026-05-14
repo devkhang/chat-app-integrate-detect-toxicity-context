@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, TextInput,Image } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { rtdb } from '../../firebase';
 import { ref, set, get } from 'firebase/database';
+import * as ImagePicker from 'expo-image-picker';
+import { storage } from '../../firebase'; // Đảm bảo đúng đường dẫn
+import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const ALL_EMOJIS = [
   // === EMOJI REACTION / LIKE (ưu tiên) ===
@@ -41,6 +44,8 @@ export default function RoomSettingsScreen() {
   const [selectedEmoji, setSelectedEmoji] = useState<string>('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [background, setBackground] = useState<string | null>(null); // Thêm state background
+  const [isUploading, setIsUploading] = useState(false);
 
   // Load emoji chính của phòng
   useEffect(() => {
@@ -55,6 +60,39 @@ export default function RoomSettingsScreen() {
     };
     load();
   }, [roomId]);
+
+  const pickBackground = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [9, 16], // Tỉ lệ màn hình điện thoại
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      try {
+        setIsUploading(true);
+        const uri = result.assets[0].uri;
+        
+        // 1. Upload lên Firebase Storage
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const fileRef = sRef(storage, `room_backgrounds/${roomId}_${Date.now()}.jpg`);
+        await uploadBytes(fileRef, blob);
+        
+        // 2. Lấy URL và lưu vào RTDB
+        const downloadUrl = await getDownloadURL(fileRef);
+        await set(ref(rtdb, `rooms/${roomId}/background`), downloadUrl);
+        
+        setBackground(downloadUrl);
+        Alert.alert("Thành công", "Đã cập nhật hình nền phòng");
+      } catch (error) {
+        Alert.alert("Lỗi", "Không thể tải ảnh lên");
+      } finally {
+        setIsUploading(false);
+      }
+    }
+  };
 
   // Tự động lưu khi chọn
   useEffect(() => {
@@ -85,6 +123,35 @@ export default function RoomSettingsScreen() {
           <Text style={styles.currentEmoji}>{selectedEmoji || 'Chưa chọn'}</Text>
           <Text style={styles.changeText}>Thay đổi</Text>
         </TouchableOpacity>
+      </View>
+      
+      <View style={styles.currentSection}>
+        <Text style={styles.label}>Hình nền phòng:</Text>
+        <TouchableOpacity 
+          style={styles.currentEmojiBox} 
+          onPress={pickBackground}
+          disabled={isUploading}
+        >
+          {background ? (
+            <Image source={{ uri: background }} style={{ width: 60, height: 100, borderRadius: 8 }} />
+          ) : (
+            <Text style={{ color: '#fff' }}>Mặc định (trắng)</Text>
+          )}
+          <Text style={styles.changeText}>
+            {isUploading ? "Đang tải..." : "Đổi hình nền"}
+          </Text>
+        </TouchableOpacity>
+        {background && (
+           <TouchableOpacity 
+            onPress={() => {
+                set(ref(rtdb, `rooms/${roomId}/background`), null);
+                setBackground(null);
+            }}
+            style={{ marginTop: 10 }}
+           >
+             <Text style={{ color: '#ff4444', textAlign: 'right' }}>Xóa hình nền</Text>
+           </TouchableOpacity>
+        )}
       </View>
 
       {/* MODAL CHỌN EMOJI */}

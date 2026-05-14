@@ -13,6 +13,7 @@ import {
   Image,
   Keyboard,
   Modal,
+  ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams,useRouter } from 'expo-router';
@@ -59,6 +60,7 @@ export default function ChatScreen() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [roomBg, setRoomBg] = useState<string | null>(null);
 // ==================== LOAD 1 EMOJI CHÍNH TỪ ROOM ====================
   useEffect(() => {
   if (!roomId) return;
@@ -75,6 +77,15 @@ export default function ChatScreen() {
     });
 
     return () => unsubscribe(); // Cleanup khi rời trang
+  }, [roomId]);
+
+    useEffect(() => {
+    if (!roomId) return;
+    const bgRef = ref(rtdb, `rooms/${roomId}/background`);
+    const unsubscribe = onValue(bgRef, (snapshot) => {
+      setRoomBg(snapshot.val());
+    });
+    return () => unsubscribe();
   }, [roomId]);
 
   useEffect(() => {
@@ -376,7 +387,11 @@ export default function ChatScreen() {
         </View>
       </TouchableOpacity>
     </View>
-
+    <ImageBackground 
+      source={roomBg ? { uri: roomBg } : undefined} 
+      style={{ flex: 1, backgroundColor: roomBg ? 'transparent' : '#fff' }}
+      resizeMode="cover"
+    >
       <FlatList
         style={{ flex: 1 }}
         data={messages}
@@ -483,6 +498,7 @@ export default function ChatScreen() {
           </Text>
         </View>
       ) : null}
+    </ImageBackground>
       {/* ==================== INPUT + TOXIC DISPLAY ==================== */}
       <View style={styles.inputArea}>
         {/* Progress tải mô hình */}
@@ -523,7 +539,7 @@ export default function ChatScreen() {
                 </View>
               );
             }
-            
+
             if (showActionMenu) {
               return (
                 <>
