@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio, AVPlaybackStatus } from 'expo-av'; // Thêm AVPlaybackStatus
+import { Audio, AVPlaybackStatus } from 'expo-av'; 
 import type { Message } from '../types';
 
 interface Props {
@@ -15,35 +15,41 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // 1. Hàm xử lý trạng thái phát (Quan trọng nhất để Replay)
-  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-
-    // Cập nhật thanh progress
-    if (status.durationMillis) {
-      setProgress(status.positionMillis / status.durationMillis);
-    }
-
-    // KHI PHÁT HẾT: Reset mọi thứ về trạng thái ban đầu
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      setProgress(0);
-      // Đưa thanh cuộn về 0 để lần sau bấm Play là nó chạy từ đầu
-      sound?.setPositionAsync(0); 
-    }
-  };
-
   useEffect(() => {
     let newSound: Audio.Sound | null = null;
 
     const loadSound = async () => {
       if (!item.voiceBase64) return;
       try {
+        // 1. Khởi tạo file âm thanh
         const { sound: createdSound } = await Audio.Sound.createAsync(
           { uri: item.voiceBase64 },
-          { shouldPlay: false },
-          onPlaybackStatusUpdate // Đăng ký listener ngay khi load
+          { shouldPlay: false }
         );
+        
+        // 2. Đăng ký listener xử lý trạng thái phát bằng biến createdSound
+        createdSound.setOnPlaybackStatusUpdate(async (status: AVPlaybackStatus) => {
+          if (!status.isLoaded) return;
+
+          // Cập nhật thanh progress
+          if (status.durationMillis) {
+            setProgress(status.positionMillis / status.durationMillis);
+          }
+
+          // XỬ LÝ KHI PHÁT HẾT ÂM THANH
+          if (status.didJustFinish) {
+            setIsPlaying(false);
+            setProgress(0);
+            
+            // Dùng stopAsync() để ngắt hẳn file âm thanh và đưa con trỏ về 0.
+            // Điều này giúp nút Play ở lần bấm tiếp theo hoạt động trơn tru ngay lập tức.
+            await createdSound.stopAsync(); 
+          } else {
+            // Đồng bộ trạng thái play/pause
+            setIsPlaying(status.isPlaying);
+          }
+        });
+
         newSound = createdSound;
         setSound(createdSound);
       } catch (err) {
@@ -58,19 +64,15 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
     };
   }, [item.voiceBase64]);
 
+  // Hàm xử lý khi bấm nút Play / Pause
   const togglePlay = async () => {
     if (!sound) return;
 
     if (isPlaying) {
       await sound.pauseAsync();
-      setIsPlaying(false);
     } else {
-      // Nếu đang ở cuối file (progress gần bằng 1 hoặc đã hết), phát lại từ đầu
-      if (progress >= 0.99) {
-        await sound.setPositionAsync(0);
-      }
+      // Khi đã dùng stopAsync() ở trên, bạn chỉ cần gọi playAsync() là nó sẽ tự chạy từ đầu
       await sound.playAsync();
-      setIsPlaying(true);
     }
   };
 
@@ -109,12 +111,10 @@ export default function VoiceMessageBubble({ item, isMine }: Props) {
   );
 }
 
-// ... styles giữ nguyên như code của bạn
-
 const styles = StyleSheet.create({
   bubble: {
-    width: 220,               // Cố định chiều rộng để thanh bubble dài ra
-    paddingVertical: 8,       // Giảm padding dọc để lùn xuống
+    width: 220,               
+    paddingVertical: 8,       
     paddingHorizontal: 12,
     borderRadius: 20,
   },
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   voiceContainer: {
-    flexDirection: 'row',     // Sắp xếp icon và info nằm ngang
+    flexDirection: 'row',     
     alignItems: 'center',
   },
   rightContent: {
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   myText: { color: '#fff' },
   otherText: { color: '#222' },
   progressBarContainer: {
-    height: 3,                // Thanh progress mỏng hơn
+    height: 3,                
     backgroundColor: 'rgba(0,0,0,0.1)',
     borderRadius: 2,
     width: '100%',

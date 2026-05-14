@@ -11,6 +11,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
+  Keyboard,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams,useRouter } from 'expo-router';
@@ -29,6 +31,11 @@ import VoiceMessageBubble from '../../components/VoiceMessageBubble';
 import { Audio } from 'expo-av';
 import { stringToNumberId } from '@/functions/src/shared/utils';
 import { ref, update ,onValue } from 'firebase/database';
+import CameraScreen from '../../components/CameraScreen';
+// Thêm import Firebase Storage
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/firebase'; // Import storage từ file firebase.ts của bạn
+import { ActivityIndicator } from 'react-native'; // Để hiện loading khi đang tải ảnh lên
 
 export default function ChatScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -48,6 +55,10 @@ export default function ChatScreen() {
   const [voiceDuration, setVoiceDuration] = useState(0);
   const [selectedEmoji, setSelectedEmoji] = useState('👍'); // CHỈ 1 EMOJI
   const [myProfile, setMyProfile] = useState<any>(null);
+  const [isCameraVisible, setIsCameraVisible] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 // ==================== LOAD 1 EMOJI CHÍNH TỪ ROOM ====================
   useEffect(() => {
   if (!roomId) return;
@@ -88,6 +99,47 @@ export default function ChatScreen() {
 
     loadMyProfile();
   }, [myUid]);
+
+  const uploadImageToStorage = async (uri: string) => {
+    try {
+      setIsUploadingImage(true);
+      
+      // 1. Đổi URI thành file Blob để Firebase có thể đọc được
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      // 2. Tạo đường dẫn lưu file trên Storage (Ví dụ: chat_images/room123/168...jpg)
+      const fileName = `chat_images/${roomId}/img_${Date.now()}.jpg`;
+      const fileRef = storageRef(storage, fileName);
+
+      // 3. Tải file lên
+      await uploadBytes(fileRef, blob);
+
+      // 4. Lấy link URL trực tiếp (https://...)
+      const downloadUrl = await getDownloadURL(fileRef);
+      
+      return downloadUrl;
+    } catch (error) {
+      console.error("Lỗi upload ảnh:", error);
+      throw error;
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+  // Hàm xử lý gửi ảnh chụp trực tiếp từ Camera
+  const handleSendCapturedPhoto = async (uri: string) => {
+    setIsCameraVisible(false);
+    if (!myUid) return;
+    try {
+      // Lấy link URL thật từ Storage
+      const imageUrl = await uploadImageToStorage(uri);
+      
+      // Gửi vào tin nhắn
+      await sendChatMessage(roomId as string, 'image', imageUrl);
+    } catch (err) {
+      Alert.alert('Lỗi', 'Không thể tải hình ảnh chụp lên.');
+    }
+  };
 
   const handleTextChange = (newText: string) => {
     setChatText(newText);
@@ -199,20 +251,19 @@ export default function ChatScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.8,
+      quality: 0.8, // Giờ dùng Storage rồi nên bạn cứ để chất lượng cao (0.8 hoặc 1) thoải mái nhé
     });
 
     if (!result.canceled && result.assets[0]) {
       if (!myUid) return;
-
       try {
-        await sendChatMessage(
-          roomId as string,
-          'image',
-          result.assets[0].uri
-        );
+        // Lấy link URL thật từ Storage thay vì base64
+        const imageUrl = await uploadImageToStorage(result.assets[0].uri);
+        
+        // Gửi link ảnh vào database (Vẫn dùng key là 'image' để UI cũ của bạn tự nhận diện)
+        await sendChatMessage(roomId as string, 'image', imageUrl);
       } catch (err) {
-        Alert.alert('Lỗi', 'Không thể gửi hình ảnh');
+        Alert.alert('Lỗi', 'Không thể tải hình ảnh lên. Vui lòng thử lại.');
       }
     }
   };
@@ -457,27 +508,78 @@ export default function ChatScreen() {
         )}
 
         <View style={styles.inputRow}>
-          <TouchableOpacity style={styles.imageButton} onPress={pickAndSendImage}>
-            <Text style={styles.imageButtonText}>📸</Text>
-          </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.voiceButton, isRecording && styles.voiceButtonActive]}
-          onPressIn={startRecording}     // Nhấn giữ để bắt đầu ghi
-          onPressOut={stopRecording}     // Thả ra để dừng và gửi
-          disabled={isAnalyzing}
-        >
-        <Ionicons
-          name={isRecording ? "mic" : "mic-outline"}
-          size={28}
-          color={isRecording ? "#ef4444" : "#0084ff"}
-        />
-        </TouchableOpacity>
+          {/* Logic hiển thị: 
+            - isMenuExpanded: Người dùng chủ động bấm mũi tên ép mở menu
+            - !isInputFocused && text rỗng: Trạng thái ban đầu chưa làm gì
+          */}
+          {(() => {
+            const showActionMenu = isMenuExpanded || (!isInputFocused && text.trim().length === 0);
+
+            if (isUploadingImage) {
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10 }}>
+                  <ActivityIndicator size="small" color="#0084ff" />
+                  <Text style={{ color: '#0084ff', fontSize: 13 }}>Đang gửi ảnh...</Text>
+                </View>
+              );
+            }
+            
+            if (showActionMenu) {
+              return (
+                <>
+                  {/* 1. Nút Thư viện ảnh */}
+                  <TouchableOpacity style={styles.imageButton} onPress={pickAndSendImage}>
+                    <Text style={styles.imageButtonText}>🖼️</Text>
+                  </TouchableOpacity>
+
+                  {/* 2. Nút Camera */}
+                  <TouchableOpacity style={styles.imageButton} onPress={() => setIsCameraVisible(true)}>
+                    <Text style={styles.imageButtonText}>📸</Text>
+                  </TouchableOpacity>
+
+                  {/* 3. Nút Voice */}
+                  <TouchableOpacity
+                    style={[styles.voiceButton, isRecording && styles.voiceButtonActive]}
+                    onPressIn={startRecording}
+                    onPressOut={stopRecording}
+                    disabled={isAnalyzing}
+                  >
+                    <Ionicons
+                      name={isRecording ? "mic" : "mic-outline"}
+                      size={28}
+                      color={isRecording ? "#ef4444" : "#0084ff"}
+                    />
+                  </TouchableOpacity>
+                </>
+              );
+            } else {
+              return (
+                /* Nút Mũi tên để ép mở lại menu */
+                <TouchableOpacity
+                  style={styles.imageButton}
+                  onPress={() => {
+                    setIsMenuExpanded(true); // Bật cờ ép hiển thị menu
+                    Keyboard.dismiss();      // Ẩn bàn phím đi cho thoáng
+                  }}
+                >
+                  <Ionicons name="chevron-forward-outline" size={28} color="#0084ff" />
+                </TouchableOpacity>
+              );
+            }
+          })()}
+
+          {/* Ô Nhập text */}
           <TextInput
             style={[styles.input, result?.isToxic && styles.inputToxic]}
             value={text}
             onChangeText={handleTextChange}
-            placeholder="Nhập"
+            placeholder="Nhập..."
             multiline
+            onFocus={() => {
+              setIsInputFocused(true); 
+              setIsMenuExpanded(false); // Khi gõ chữ lại thì tự động thu gọn menu
+            }}
+            onBlur={() => setIsInputFocused(false)}
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
@@ -485,6 +587,7 @@ export default function ChatScreen() {
             blurOnSubmit={false}
           />
 
+          {/* Nút Gửi / Emoji */}
           {text.trim().length > 0 ? (
             <TouchableOpacity style={styles.sendButton} onPress={onSend}>
               <Text style={styles.sendText}>Gửi</Text>
@@ -492,14 +595,29 @@ export default function ChatScreen() {
           ) : (
             <TouchableOpacity
               style={styles.singleEmojiButton}
-              onPress={() => {
-                sendChatMessage(roomId as string, 'text', selectedEmoji);
-              }}
+              onPress={() => sendChatMessage(roomId as string, 'text', selectedEmoji)}
             >
               <Text style={styles.singleEmojiText}>{selectedEmoji}</Text>
             </TouchableOpacity>
           )}
         </View>
+          {/* CHÚ Ý: ĐOẠN NÀY PHẢI CÓ ĐỂ CAMERA HIỆN LÊN */}
+        <Modal visible={isCameraVisible} animationType="slide">
+          <CameraScreen 
+            onClose={() => setIsCameraVisible(false)} 
+            onSendPhoto={handleSendCapturedPhoto} 
+            
+            // THÊM ĐOẠN NÀY
+            onOpenGallery={() => {
+              setIsCameraVisible(false); // 1. Đóng màn hình Camera lại
+              
+              // 2. Mở thư viện ảnh (Dùng setTimeout để đợi Modal Camera đóng xong cho mượt)
+              setTimeout(() => {
+                pickAndSendImage(); 
+              }, 300);
+            }} 
+          />
+        </Modal>
       </View>
     </KeyboardAvoidingView>
   );

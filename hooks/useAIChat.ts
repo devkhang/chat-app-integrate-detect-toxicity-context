@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { auth } from '../firebase';
-import { sendMessage, subscribeMessages, ensureAIRoom } from '../rtdb services/ChatService';  // ← thêm ensureAIRoom
+import { auth, rtdb } from '../firebase'; // Thêm rtdb vào import
+import { ref, push, update } from 'firebase/database'; // Import các hàm để tự đẩy tin nhắn
+import { sendChatMessage, subscribeMessages, ensureAIRoom } from '../rtdb services/ChatService';
 import type { Message } from '../types';
-import { DEFAULT_AVATAR_BASE64 } from '@/app/constants';
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
@@ -12,38 +12,35 @@ export function useAIChat() {
   const [isLoading, setIsLoading] = useState(false);
 
   const myUid = auth.currentUser?.uid || '';
-  const myName = 'Bạn';
-
-  // ==================== THAY ĐỔI Ở ĐÂY ====================
   const [roomId, setRoomId] = useState<string>('');
 
+  // Tạo / lấy room AI riêng
   useEffect(() => {
     if (!myUid) return;
-
-    // Tạo / lấy room AI riêng
     ensureAIRoom(myUid).then((id) => {
       setRoomId(id);
     });
   }, [myUid]);
 
-  // Chỉ subscribe khi đã có roomId
+  // Lắng nghe tin nhắn khi đã có roomId
   useEffect(() => {
     if (!roomId) return;
     const unsubscribe = subscribeMessages(roomId, setMessages);
     return unsubscribe;
   }, [roomId]);
-  // =======================================================
 
   const handleSend = async () => {
     if (!text.trim() || !myUid || !roomId || isLoading) return;
 
     const userMessage = text.trim();
-    setText('');
+    setText(''); // Làm trống ô nhập ngay lập tức cho mượt
     setIsLoading(true);
 
     try {
-      await sendMessage(roomId, userMessage, myUid, myName,DEFAULT_AVATAR_BASE64);
+      // 1. Gửi tin nhắn của người dùng (Nằm bên PHẢI)
+      await sendChatMessage(roomId, 'text', userMessage);
 
+      // Gọi API Gemini
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
@@ -63,14 +60,32 @@ export function useAIChat() {
       );
 
       const data = await response.json();
-      console.log('🔍 FULL Response từ Gemini 3 Flash:', JSON.stringify(data, null, 2));
       let replyText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!replyText) {
-        replyText = "Xin lỗi, Gemini không thể trả lời câu hỏi này do bị chặn.";
+        replyText = "Xin lỗi, Gemini không thể trả lời câu hỏi này do bị chặn hoặc quá tải.";
       }
 
-      await sendMessage(roomId, replyText, 'grok-ai', 'Gemini AI', DEFAULT_AVATAR_BASE64);
+      // ==================== QUAN TRỌNG: LƯU TIN NHẮN CỦA AI ====================
+      // 2. Tạo object tin nhắn cho AI với senderId cứng là 'gemini-ai'
+      const aiMessage = {
+        senderId: 'gemini-ai', // Giúp UI tự nhận diện và đẩy sang bên TRÁI
+        senderName: 'Gemini AI',
+        text: replyText,
+        timestamp: Date.now(),
+        type: 'text',
+      };
+
+      // Đẩy thẳng tin nhắn của AI vào nhánh messages của phòng chat hiện tại
+      await push(ref(rtdb, `roomMessages/${roomId}`), aiMessage);
+
+      // Cập nhật lại thông tin phòng chat để bên ngoài danh sách chat hiện đúng tin nhắn mới nhất
+      await update(ref(rtdb, `rooms/${roomId}`), {
+        lastMessage: replyText,
+        lastMessageTime: Date.now(),
+      });
+      // =========================================================================
+
     } catch (error) {
       console.error('🚨 Lỗi Gemini API:', error);
     } finally {

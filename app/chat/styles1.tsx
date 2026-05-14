@@ -19,9 +19,9 @@ export const styles = StyleSheet.create({
 
   chatImage: { width: 220, height: 220, borderRadius: 12, marginVertical: 4 },
 
-  inputArea: { padding: 12, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
+  inputArea: { padding: 10, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  imageButton: { width: 48, height: 48, backgroundColor: '#f0f0f0', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  imageButton: { width: 40, height: 48, backgroundColor: '#f0f0f0', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   imageButtonText: { fontSize: 26 },
   input: { flex: 1, minHeight: 48, maxHeight: 160, borderWidth: 1, borderColor: '#ddd', borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12, fontSize: 16, backgroundColor: '#f9f9f9' },
   inputToxic: { borderColor: '#ef4444', borderWidth: 2, backgroundColor: '#fef2f2' },
